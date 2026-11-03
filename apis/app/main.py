@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.auth.constants import CSRF_HEADER_NAME
+from app.auth.http import register_auth_exception_handlers
 from app.core.config import settings
 from app.core.database import engine
 from app.core.errors import register_exception_handlers
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
         expose_headers=[REQUEST_ID_HEADER],
     )
     register_exception_handlers(application)
+    register_auth_exception_handlers(application)
     application.include_router(api_router, prefix=settings.api_v1_prefix)
     return application
 

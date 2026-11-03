@@ -108,7 +108,6 @@ def test_staff_create_normalizes_input() -> None:
     assert staff.email == "new.agent@estatehub.example"
     assert staff.full_name == "Ada Agent"
     assert staff.roles == [RoleCode.AGENT, RoleCode.MANAGER]
-    assert staff.status == UserStatus.ACTIVE
 
 
 def test_staff_create_hides_password_in_repr() -> None:
@@ -168,21 +167,31 @@ def test_staff_create_rejects_invalid_roles(roles: list[str]) -> None:
         staff_create(roles=roles)
 
 
-@pytest.mark.parametrize("field", ["password_hash", "token_version", "id", "last_login_at"])
+@pytest.mark.parametrize(
+    "field", ["password_hash", "token_version", "id", "last_login_at", "status"]
+)
 def test_staff_create_rejects_unknown_fields(field: str) -> None:
     with pytest.raises(ValidationError, match="Extra inputs"):
         staff_create(**{field: "x"})
 
 
 def test_staff_update_accepts_partial_changes() -> None:
-    update = StaffUpdate.model_validate({"status": "disabled"})
+    update = StaffUpdate.model_validate({"full_name": " New Name "})
 
-    assert update.model_dump(exclude_unset=True) == {"status": UserStatus.DISABLED}
+    assert update.model_dump(exclude_unset=True) == {"full_name": "New Name"}
 
 
 @pytest.mark.parametrize(
     "payload",
-    [{}, {"email": None}, {"roles": None}, {"password": VALID_PASSWORD}, {"token_version": 0}],
+    [
+        {},
+        {"email": None},
+        {"full_name": None},
+        {"roles": ["agent"]},
+        {"status": "disabled"},
+        {"password": VALID_PASSWORD},
+        {"token_version": 0},
+    ],
 )
 def test_staff_update_rejects_empty_null_and_unknown_fields(payload: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):

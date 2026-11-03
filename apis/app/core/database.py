@@ -25,6 +25,10 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
+    # Fetch server-generated values with RETURNING. Otherwise they are expired after a
+    # flush and a later read would need implicit I/O, which async sessions refuse.
+    __mapper_args__ = {"eager_defaults": True}
+
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -52,6 +56,9 @@ def str_enum(enum_class: type[StrEnum], name: str) -> Enum:
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
+    # Bound values include password hashes and token hashes; keep them out of SQL logs
+    # and exception messages.
+    hide_parameters=True,
     pool_pre_ping=True,
 )
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False)

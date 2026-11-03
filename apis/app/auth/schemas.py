@@ -3,7 +3,15 @@ import unicodedata
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+)
 
 from app.auth.constants import (
     CLIENT_IPV4_PREFIX,
@@ -11,6 +19,9 @@ from app.auth.constants import (
     TOKEN_TYPE,
     USER_AGENT_MAX_LENGTH,
 )
+from app.core.security.passwords import normalize_password
+from app.users.constants import PASSWORD_MAX_LENGTH
+from app.users.schemas import NewPassword
 
 
 class TokenResponse(BaseModel):
@@ -38,6 +49,19 @@ class UserIdentity(BaseModel):
     roles: list[str] = Field(description="Role codes, for example `administrator`.")
 
 
+class EffectivePermissions(BaseModel):
+    """What the current user may do, computed by the server for navigation and display.
+
+    The API enforces permissions on every request; clients must not treat this as
+    authorization.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    roles: list[str]
+    permissions: list[str]
+
+
 class ClientMetadata(BaseModel):
     """Privacy-conscious request origin stored with a refresh session.
 
@@ -61,6 +85,40 @@ class ClientMetadata(BaseModel):
     @classmethod
     def _bounded_user_agent(cls, value: str | None) -> str | None:
         return _summarize_user_agent(value)
+
+
+class PasswordChange(BaseModel):
+    """Self-service password change.
+
+    The new password must be 12-128 characters. Spaces and passphrases are allowed, and
+    nothing is trimmed or truncated. Rejected values are never echoed in errors.
+    """
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    current_password: SecretStr = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
+    new_password: NewPassword
+    new_password_confirmation: SecretStr
+
+    @field_validator("new_password")
+    @classmethod
+    def _differs_from_current(cls, value: SecretStr, info: ValidationInfo) -> SecretStr:
+        current = info.data.get("current_password")
+        if current is not None and normalize_password(
+            value.get_secret_value()
+        ) == normalize_password(current.get_secret_value()):
+            raise ValueError("The new password must differ from the current password.")
+        return value
+
+    @field_validator("new_password_confirmation")
+    @classmethod
+    def _matches_new_password(cls, value: SecretStr, info: ValidationInfo) -> SecretStr:
+        new = info.data.get("new_password")
+        if new is not None and normalize_password(value.get_secret_value()) != normalize_password(
+            new.get_secret_value()
+        ):
+            raise ValueError("The confirmation does not match the new password.")
+        return value
 
 
 def _summarize_user_agent(value: str | None) -> str | None:

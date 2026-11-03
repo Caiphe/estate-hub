@@ -1,5 +1,6 @@
 import unicodedata
 from datetime import datetime
+from enum import StrEnum
 from typing import Annotated, Self
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, PageOffset
 from app.users.constants import (
     EMAIL_MAX_LENGTH,
     FULL_NAME_MAX_LENGTH,
@@ -68,7 +70,10 @@ RoleCodes = Annotated[list[RoleCode], AfterValidator(_unique_roles)]
 
 
 class StaffCreate(BaseModel):
-    """Administrator input for creating a staff account. The service hashes the password."""
+    """Administrator input for creating an active staff account.
+
+    The service hashes the password; it is never stored or returned as given.
+    """
 
     # Rejected values (including passwords) must never be echoed into errors or logs.
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
@@ -77,19 +82,20 @@ class StaffCreate(BaseModel):
     full_name: FullName
     password: NewPassword
     roles: RoleCodes = Field(min_length=1)
-    status: UserStatus = UserStatus.ACTIVE
 
 
 class StaffUpdate(BaseModel):
-    """Administrator input for a partial staff update. Omitted fields are unchanged."""
+    """Administrator input for a partial profile update. Omitted fields are unchanged.
+
+    Status, roles, and passwords change only through their dedicated endpoints, so any
+    other field is rejected.
+    """
 
     # Rejected values (including passwords) must never be echoed into errors or logs.
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     email: NormalizedEmail | None = None
     full_name: FullName | None = None
-    status: UserStatus | None = None
-    roles: RoleCodes | None = None
 
     @model_validator(mode="after")
     def _reject_null_and_empty_updates(self) -> Self:
@@ -99,6 +105,41 @@ class StaffUpdate(BaseModel):
             if getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null.")
         return self
+
+
+class RoleAssignment(BaseModel):
+    """The complete new role set for a staff member."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    roles: RoleCodes = Field(min_length=1)
+
+
+class StaffSort(StrEnum):
+    FULL_NAME = "full_name"
+    FULL_NAME_DESC = "-full_name"
+    EMAIL = "email"
+    EMAIL_DESC = "-email"
+    CREATED_AT = "created_at"
+    CREATED_AT_DESC = "-created_at"
+
+
+class StaffListQuery(BaseModel):
+    """Filters, ordering, and paging for the staff list. Unknown parameters are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: UserStatus | None = None
+    role: RoleCode | None = None
+    q: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        description="Case-insensitive search in email and full name.",
+    )
+    sort: StaffSort = StaffSort.FULL_NAME
+    limit: PageLimit = DEFAULT_PAGE_SIZE
+    offset: PageOffset = 0
 
 
 class UserPublic(BaseModel):

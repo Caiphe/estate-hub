@@ -28,6 +28,7 @@ class AuthErrorCode(StrEnum):
     PERMISSION_DENIED = "permission_denied"
     RATE_LIMITED = "auth_rate_limited"
     SERVICE_UNAVAILABLE = "auth_service_unavailable"
+    CURRENT_PASSWORD_INCORRECT = "current_password_incorrect"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,11 @@ AUTH_ERRORS: dict[AuthErrorCode, AuthErrorSpec] = {
     ),
     AuthErrorCode.RATE_LIMITED: AuthErrorSpec(
         status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts. Please try again later."
+    ),
+    # The caller is already authenticated, so this is a field error, not a 401 that a
+    # frontend would treat as an expired session.
+    AuthErrorCode.CURRENT_PASSWORD_INCORRECT: AuthErrorSpec(
+        status.HTTP_422_UNPROCESSABLE_CONTENT, "The current password is incorrect."
     ),
     AuthErrorCode.SERVICE_UNAVAILABLE: AuthErrorSpec(
         status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -38,6 +38,26 @@ class ErrorResponse(BaseModel):
     error: ErrorDetail
 
 
+class ApiError(Exception):
+    """A business failure to return with the standard error body.
+
+    Services raise their own errors; route handlers translate them into this.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        fields: dict[str, list[str]] | None = None,
+    ) -> None:
+        super().__init__(code)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.fields = fields
+
+
 def error_response(
     request: Request,
     status_code: int,
@@ -61,6 +81,11 @@ async def _http_exception_handler(request: Request, exc: Exception) -> JSONRespo
     code = _STATUS_CODES.get(exc.status_code, "http_error")
     message = exc.detail if isinstance(exc.detail, str) else "The request could not be completed."
     return error_response(request, exc.status_code, code, message, headers=exc.headers)
+
+
+async def _api_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, ApiError)
+    return error_response(request, exc.status_code, exc.code, exc.message, exc.fields)
 
 
 async def _validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -90,6 +115,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 def register_exception_handlers(application: FastAPI) -> None:
+    application.add_exception_handler(ApiError, _api_error_handler)
     application.add_exception_handler(StarletteHTTPException, _http_exception_handler)
     application.add_exception_handler(RequestValidationError, _validation_exception_handler)
     application.add_exception_handler(Exception, _unhandled_exception_handler)
