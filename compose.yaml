@@ -1,0 +1,120 @@
+name: estatehub
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-estatehub}
+      POSTGRES_USER: ${POSTGRES_USER:-estatehub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-estatehub_dev_only}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: ./apis
+      target: development
+    command: fastapi dev app/main.py --host 0.0.0.0 --port 8000
+    env_file: .env
+    environment:
+      ESTATEHUB_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-estatehub}:${POSTGRES_PASSWORD:-estatehub_dev_only}@db:5432/${POSTGRES_DB:-estatehub}
+      ESTATEHUB_REDIS_URL: redis://redis:6379/0
+      ESTATEHUB_CELERY_BROKER_URL: redis://redis:6379/1
+      ESTATEHUB_CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/live')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apis:/app
+      - media_data:/app/storage
+
+  worker:
+    build:
+      context: ./apis
+      target: development
+    command: celery --app app.worker.celery_app worker --loglevel=INFO
+    env_file: .env
+    environment:
+      ESTATEHUB_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-estatehub}:${POSTGRES_PASSWORD:-estatehub_dev_only}@db:5432/${POSTGRES_DB:-estatehub}
+      ESTATEHUB_REDIS_URL: redis://redis:6379/0
+      ESTATEHUB_CELERY_BROKER_URL: redis://redis:6379/1
+      ESTATEHUB_CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apis:/app
+      - media_data:/app/storage
+
+  beat:
+    build:
+      context: ./apis
+      target: development
+    command: celery --app app.worker.celery_app beat --loglevel=INFO --schedule /tmp/celerybeat-schedule
+    env_file: .env
+    environment:
+      ESTATEHUB_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-estatehub}:${POSTGRES_PASSWORD:-estatehub_dev_only}@db:5432/${POSTGRES_DB:-estatehub}
+      ESTATEHUB_REDIS_URL: redis://redis:6379/0
+      ESTATEHUB_CELERY_BROKER_URL: redis://redis:6379/1
+      ESTATEHUB_CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apis:/app
+
+  web:
+    build:
+      context: ./web
+      target: development
+    command: npm run dev -- --hostname 0.0.0.0
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+      INTERNAL_API_BASE_URL: http://api:8000/api/v1
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3001}:3000"
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+  web_node_modules:
