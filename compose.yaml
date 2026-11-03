@@ -37,6 +37,9 @@ services:
     command: fastapi dev app/main.py --host 0.0.0.0 --port 8000
     env_file: .env
     environment:
+      # Development only: browser traffic reaches the API through the web container, so
+      # every user shares one IP. Per-email and per-user limits still apply unchanged.
+      ESTATEHUB_AUTH_LOGIN_MAX_ATTEMPTS_PER_IP: "200"
       ESTATEHUB_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-estatehub}:${POSTGRES_PASSWORD:-estatehub_dev_only}@db:5432/${POSTGRES_DB:-estatehub}
       ESTATEHUB_REDIS_URL: redis://redis:6379/0
       ESTATEHUB_CELERY_BROKER_URL: redis://redis:6379/1
@@ -102,7 +105,7 @@ services:
       target: development
     command: npm run dev -- --hostname 0.0.0.0
     environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+      # Next.js forwards the browser's same-origin /api/v1 requests here.
       INTERNAL_API_BASE_URL: http://api:8000/api/v1
     depends_on:
       api:

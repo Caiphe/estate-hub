@@ -12,6 +12,9 @@ EXPOSE 3000
 CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
 
 FROM dependencies AS builder
+# next.config.ts bakes the /api/v1 rewrite target into the build.
+ARG INTERNAL_API_BASE_URL=http://api:8000/api/v1
+ENV INTERNAL_API_BASE_URL=$INTERNAL_API_BASE_URL
 COPY . .
 RUN npm run build
 
