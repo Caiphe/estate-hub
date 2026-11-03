@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="800" viewBox="0 0 2400 800">
+  <!-- Temporary investment-banner placeholder (3:1). Left 55% stays clear for text;
+       subject matter sits on the right. Replace with an approved photograph. -->
+  <rect width="2400" height="800" fill="#004d40"/>
+  <path d="M1400 800V460l300-200 300 200v340z" fill="none" stroke="#ddf7e8" stroke-opacity="0.5" stroke-width="16" stroke-linejoin="round"/>
+  <rect x="1630" y="560" width="140" height="240" fill="none" stroke="#ddf7e8" stroke-opacity="0.5" stroke-width="16"/>
+</svg>

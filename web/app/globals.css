@@ -1,3 +1,86 @@
+/* --- Design tokens ----------------------------------------------------------------------
+   Public-site foundation. Names describe a role, not a component, so every landing-page
+   section composes from this set instead of adding one-off values. */
+
+:root {
+  /* Color */
+  --color-text: #07162d;
+  --color-text-muted: #566275;
+  --color-text-inverse: #ffffff;
+  --color-brand: #07833f;
+  --color-brand-strong: #004d40;
+  --color-brand-subtle: #ddf7e8;
+  --color-accent: #f5d991;
+  --color-surface: #ffffff;
+  --color-surface-tint: #edf6ff;
+  --color-border: #e3e9ef;
+
+  /* Typography: one family, fluid display sizes, fixed text sizes */
+  /* --font-manrope already carries its metric-matched fallback stack. */
+  --font-family-sans: var(--font-manrope, Arial, Helvetica, sans-serif);
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.375rem;
+  --font-size-2xl: clamp(1.75rem, 1.4rem + 1.2vw, 2.25rem);
+  --font-size-display: clamp(2.5rem, 1rem + 3vw, 3.25rem);
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+  --line-height-tight: 1.1;
+  --line-height-snug: 1.3;
+  --line-height-body: 1.6;
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-eyebrow: 0.12em;
+
+  /* Spacing: 4px base */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+
+  /* Radii */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.25rem;
+  --radius-pill: 999px;
+
+  /* Elevation: only floating panels and cards */
+  --shadow-card: 0 1px 2px rgb(7 22 45 / 6%), 0 4px 16px rgb(7 22 45 / 6%);
+  --shadow-floating: 0 12px 32px rgb(7 22 45 / 12%);
+
+  /* Layout */
+  --container-max: 73.75rem; /* 1180px */
+  --container-gutter: clamp(var(--space-4), 4vw, var(--space-10));
+  --control-min-size: 2.75rem; /* 44px pointer target */
+  --site-header-height: 5.5rem; /* fixed so font loading never moves the header */
+
+  /* Focus */
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--color-brand);
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --easing-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+  }
+}
+
 :root {
   color-scheme: light;
   font-family: Arial, Helvetica, sans-serif;
@@ -11,15 +94,6 @@
 
 body {
   margin: 0;
-}
-
-.landing {
-  width: min(720px, calc(100% - 40px));
-  margin: 0 auto;
-  min-height: 100vh;
-  display: grid;
-  align-content: center;
-  gap: 20px;
 }
 
 .eyebrow {
@@ -44,21 +118,6 @@ h1 {
   color: #4d5d54;
   font-size: 1.15rem;
   line-height: 1.7;
-}
-
-.button-link {
-  width: fit-content;
-  color: #f8f7f2;
-  background: #183e2b;
-  border-radius: 999px;
-  padding: 12px 18px;
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.button-link:hover,
-.button-link:focus-visible {
-  background: #285b40;
 }
 
 /* --- Shared controls ----------------------------------------------------------------- */
@@ -486,4 +545,271 @@ a.button {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* --- Public-site primitives ------------------------------------------------------------- */
+
+.page-container {
+  width: min(var(--container-max), 100% - 2 * var(--container-gutter));
+  margin-inline: auto;
+}
+
+/* --- Public-site shell and header -------------------------------------------------------- */
+
+.site {
+  position: relative;
+  min-height: 100vh;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-body);
+}
+
+.site :focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.site-main:focus {
+  outline: none;
+}
+
+.skip-link {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 2;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-text);
+  color: var(--color-text-inverse);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: none;
+}
+
+/* Transparent and absolutely placed so the hero's wash shows behind it. */
+.site-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+}
+
+.site-header-inner {
+  min-height: var(--site-header-height);
+  display: flex;
+  flex-wrap: wrap; /* Interim narrow-screen fallback; Prompt 11 adds the mobile menu. */
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-8);
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-min-size);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.brand-mark-icon {
+  color: var(--color-brand);
+}
+
+.brand-mark-text {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-extrabold);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.primary-nav-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.primary-nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-min-size);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--easing-standard);
+}
+
+/* The underline marks the current page without relying on color alone. */
+.primary-nav-link::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 var(--space-1);
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  transform: scaleX(0);
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+
+.primary-nav-link:hover,
+.primary-nav-link[aria-current="page"] {
+  color: var(--color-brand);
+}
+
+.primary-nav-link:hover::after,
+.primary-nav-link[aria-current="page"]::after {
+  transform: scaleX(1);
+}
+
+.site-header-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-min-size);
+  padding-inline: var(--space-5);
+  border: 1.5px solid var(--color-brand);
+  border-radius: var(--radius-sm);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--easing-standard);
+}
+
+.action-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.action-secondary:hover {
+  background: var(--color-brand-subtle);
+}
+
+.action-primary {
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+}
+
+.action-primary:hover {
+  border-color: var(--color-brand-strong);
+  background: var(--color-brand-strong);
+}
+
+/* --- Hero ------------------------------------------------------------------------------- */
+
+.hero {
+  /* Share of the hero width the copy column claims before the photograph begins. */
+  --hero-copy-share: 42%;
+  /* Room for the search panel (Prompt 04): tabs, the field row, and popular searches. */
+  --hero-search-reserve: 11rem;
+
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface-tint);
+  padding-block: calc(var(--site-header-height) + var(--space-6)) var(--space-12);
+}
+
+.hero-media {
+  position: absolute;
+  inset: 0 0 0 var(--hero-copy-share);
+}
+
+/* Bias the crop right and low: building, planting, and pool stay; empty sky goes. */
+.hero-media-image {
+  object-fit: cover;
+  object-position: 62% 70%;
+}
+
+/* Feathers the photograph into the wash so the seam never cuts behind the copy, and
+   lightens the strip under the header so navigation keeps its contrast. */
+.hero-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, var(--color-surface-tint) 0%, transparent 30%),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-surface-tint) 75%, transparent) 0%,
+      transparent var(--site-header-height)
+    );
+}
+
+.hero-inner {
+  position: relative;
+  display: grid;
+  gap: var(--space-8);
+}
+
+.hero-content {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-5);
+  max-width: 30rem;
+}
+
+.badge-pill {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-brand-subtle);
+  color: var(--color-brand-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.hero-title {
+  /* Width, not <br>, gives the three-line break at desktop sizes. */
+  max-width: 11.5em;
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-extrabold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.hero-title-brand {
+  color: var(--color-brand);
+}
+
+.hero-lead {
+  max-width: 26em;
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-body);
+}
+
+.hero-search {
+  min-height: var(--hero-search-reserve);
+}
+
+/* Interim stacking below desktop; Prompt 11 owns the full responsive recomposition. */
+@media (max-width: 59.99rem) {
+  .hero {
+    display: flex;
+    flex-direction: column-reverse;
+    padding-bottom: 0;
+  }
+
+  .hero-media {
+    position: relative;
+    inset: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  .hero-media::after {
+    background: linear-gradient(to bottom, var(--color-surface-tint) 0%, transparent 25%);
+  }
 }
