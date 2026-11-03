@@ -53,3 +53,17 @@ def csrf_tokens_match(cookie_value: str | None, header_value: str | None) -> boo
     if not _URL_SAFE_TOKEN.fullmatch(cookie_value) or not _URL_SAFE_TOKEN.fullmatch(header_value):
         return False
     return hmac.compare_digest(cookie_value.encode("ascii"), header_value.encode("ascii"))
+
+
+def derive_key(secret: bytes, label: str) -> bytes:
+    """A purpose-specific subkey, so one secret never keys two different uses directly."""
+    return hmac.new(secret, label.encode(), hashlib.sha256).digest()
+
+
+def keyed_fingerprint(value: str, key: bytes) -> str:
+    """A stable, non-reversible reference to a value such as an email or IP address.
+
+    Equal inputs give equal fingerprints, so events can be correlated without storing
+    the value itself.
+    """
+    return hmac.new(key, value.encode("utf-8"), hashlib.sha256).hexdigest()

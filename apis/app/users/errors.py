@@ -38,3 +38,8 @@ class LastAdministratorError(StaffServiceError):
 class SelfLockoutError(StaffServiceError):
     code = "self_lockout"
     message = "You cannot disable your own account or remove your own administrator role."
+
+
+class AdministratorAlreadyExistsError(StaffServiceError):
+    code = "administrator_exists"
+    message = "An active administrator already exists."

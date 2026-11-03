@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from pwdlib import PasswordHash
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.events import AuditEventCode
+from app.audit.service import record_audit_event
 from app.auth.constants import RevocationReason
 from app.auth.errors import (
     DisabledUserError,
@@ -33,8 +36,10 @@ from app.core.security.access_tokens import (
 )
 from app.core.security.exceptions import MalformedRefreshTokenError, PasswordHashError
 from app.core.security.opaque_tokens import (
+    derive_key,
     generate_refresh_token,
     hash_refresh_token,
+    keyed_fingerprint,
     refresh_token_hash_key,
 )
 from app.core.security.passwords import (
@@ -48,6 +53,9 @@ from app.users.constants import EMAIL_MAX_LENGTH
 from app.users.models import User
 from app.users.repository import UserRepository
 
+logger = logging.getLogger(__name__)
+USER_ENTITY = "user"
+
 # A rotated token presented again within this window is treated as a concurrent request
 # from the same client (for example two browser tabs), not as theft. It still gets no
 # tokens; it just does not revoke the family.
@@ -60,6 +68,14 @@ class AuthConfig:
     refresh_hash_key: bytes
     refresh_lifetime: timedelta
     rotation_grace: timedelta = DEFAULT_ROTATION_GRACE
+
+    @property
+    def fingerprint_key(self) -> bytes:
+        """Keys email and IP fingerprints in rate-limit keys and audit metadata."""
+        return derive_key(self.refresh_hash_key, "estatehub:fingerprint:v1")
+
+    def fingerprint(self, value: str) -> str:
+        return keyed_fingerprint(value, self.fingerprint_key)
 
     def __repr__(self) -> str:
         return (
@@ -140,20 +156,52 @@ class AuthService:
         self._sessions = RefreshSessionRepository(db)
 
     async def authenticate(
-        self, email: str, password: str, client: ClientMetadata | None = None
+        self,
+        email: str,
+        password: str,
+        client: ClientMetadata | None = None,
+        *,
+        request_id: str | None = None,
     ) -> IssuedSession:
-        return await self._unit_of_work(lambda: self._authenticate(email, password, client))
+        client = client or ClientMetadata()
+        try:
+            return await self._unit_of_work(
+                lambda: self._authenticate(email, password, client, request_id)
+            )
+        except InvalidCredentialsError as exc:
+            # The failed attempt's transaction was rolled back; record it on its own.
+            await self._record_separately(
+                AuditEventCode.AUTH_LOGIN_FAILED,
+                request_id=request_id,
+                metadata={
+                    "reason": exc.reason,
+                    "email_fingerprint": self._config.fingerprint(email.strip().lower()),
+                    "client_ip_prefix": client.client_ip_prefix,
+                },
+            )
+            raise
 
     async def refresh(
-        self, refresh_token: str, client: ClientMetadata | None = None
+        self,
+        refresh_token: str,
+        client: ClientMetadata | None = None,
+        *,
+        request_id: str | None = None,
     ) -> IssuedSession:
-        return await self._unit_of_work(lambda: self._refresh(refresh_token, client))
+        return await self._unit_of_work(lambda: self._refresh(refresh_token, client, request_id))
 
-    async def logout(self, refresh_token: str | None) -> LogoutResult:
-        return await self._unit_of_work(lambda: self._logout(refresh_token))
+    async def logout(
+        self, refresh_token: str | None, *, request_id: str | None = None
+    ) -> LogoutResult:
+        return await self._unit_of_work(lambda: self._logout(refresh_token, request_id))
 
     async def change_password(
-        self, user_id: uuid.UUID, current_password: str, new_password: str
+        self,
+        user_id: uuid.UUID,
+        current_password: str,
+        new_password: str,
+        *,
+        request_id: str | None = None,
     ) -> int:
         """Replace the password and sign the user out everywhere, atomically.
 
@@ -161,7 +209,7 @@ class AuthService:
         the change stops working because the token version is incremented.
         """
         return await self._unit_of_work(
-            lambda: self._change_password(user_id, current_password, new_password)
+            lambda: self._change_password(user_id, current_password, new_password, request_id)
         )
 
     async def revoke_all_sessions(
@@ -187,8 +235,46 @@ class AuthService:
             raise
         return result
 
+    async def _record_separately(
+        self,
+        code: AuditEventCode,
+        *,
+        request_id: str | None,
+        metadata: dict[str, object],
+        actor_id: uuid.UUID | None = None,
+    ) -> None:
+        """Record an event in its own transaction, after the main one was rolled back.
+
+        An audit failure is logged but never replaces the original error.
+        """
+        try:
+            self._audit(code, request_id=request_id, actor_id=actor_id, metadata=metadata)
+            await self._db.commit()
+        except Exception:
+            await self._db.rollback()
+            logger.exception("Could not record audit event %s", code.value)
+
+    def _audit(
+        self,
+        code: AuditEventCode,
+        *,
+        request_id: str | None,
+        metadata: dict[str, object],
+        actor_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> None:
+        record_audit_event(
+            self._db,
+            code,
+            actor_id=actor_id,
+            request_id=request_id,
+            entity_type=USER_ENTITY if user_id else None,
+            entity_id=user_id,
+            metadata={key: value for key, value in metadata.items() if value is not None},
+        )
+
     async def _authenticate(
-        self, email: str, password: str, client: ClientMetadata | None
+        self, email: str, password: str, client: ClientMetadata, request_id: str | None
     ) -> IssuedSession:
         normalized = email.strip().lower()
         user = (
@@ -221,12 +307,27 @@ class AuthService:
             now=now,
             client=client,
         )
+        self._audit(
+            AuditEventCode.AUTH_LOGIN_SUCCEEDED,
+            request_id=request_id,
+            actor_id=user.id,
+            user_id=user.id,
+            metadata={
+                "session_family_id": str(session.family_id),
+                "client_ip_prefix": client.client_ip_prefix,
+                "hash_upgraded": check.replacement_hash is not None or None,
+            },
+        )
         return self._issued(
             user, session, refresh_token, now, password_rehashed=check.replacement_hash is not None
         )
 
     async def _change_password(
-        self, user_id: uuid.UUID, current_password: str, new_password: str
+        self,
+        user_id: uuid.UUID,
+        current_password: str,
+        new_password: str,
+        request_id: str | None,
     ) -> int:
         # Locking the row serializes concurrent changes for the same user.
         user = await self._users.get_by_id(user_id, for_update=True)
@@ -236,9 +337,17 @@ class AuthService:
             raise IncorrectCurrentPasswordError()
         user.password_hash = await asyncio.to_thread(hash_password, new_password, self._hasher)
         user.updated_by_id = user.id
-        return await invalidate_user_sessions(
+        revoked = await invalidate_user_sessions(
             self._db, user.id, RevocationReason.PASSWORD_CHANGED, self._now()
         )
+        self._audit(
+            AuditEventCode.AUTH_PASSWORD_CHANGED,
+            request_id=request_id,
+            actor_id=user.id,
+            user_id=user.id,
+            metadata={"revoked_sessions": revoked},
+        )
+        return revoked
 
     async def _check_password(self, password: str, password_hash: str) -> PasswordCheck:
         try:
@@ -246,7 +355,9 @@ class AuthService:
         except PasswordHashError:
             return PasswordCheck(valid=False)
 
-    async def _refresh(self, refresh_token: str, client: ClientMetadata | None) -> IssuedSession:
+    async def _refresh(
+        self, refresh_token: str, client: ClientMetadata | None, request_id: str | None
+    ) -> IssuedSession:
         token_hash = self._hash_or_reject(refresh_token)
         session = await self._sessions.get_by_token_hash(token_hash, for_update=True)
         if session is None:
@@ -254,7 +365,7 @@ class AuthService:
 
         now = self._now()
         if session.revoked_at is not None:
-            await self._reject_revoked(session, now)
+            await self._reject_revoked(session, now, request_id)
         if now >= session.expires_at:
             raise ExpiredSessionError()
         user = session.user
@@ -278,7 +389,9 @@ class AuthService:
             raise SessionConflictError() from None
         return self._issued(user, child, new_token, now)
 
-    async def _reject_revoked(self, session: RefreshSession, now: datetime) -> None:
+    async def _reject_revoked(
+        self, session: RefreshSession, now: datetime, request_id: str | None
+    ) -> None:
         revoked_at = session.revoked_at
         assert revoked_at is not None
         if session.revoked_reason != RevocationReason.ROTATED:
@@ -290,10 +403,16 @@ class AuthService:
         revoked = await self._sessions.revoke_family(
             session.family_id, RevocationReason.REUSE_DETECTED, now
         )
+        self._audit(
+            AuditEventCode.AUTH_REFRESH_TOKEN_REUSED,
+            request_id=request_id,
+            user_id=session.user_id,
+            metadata={"session_family_id": str(session.family_id), "revoked_sessions": revoked},
+        )
         await self._db.commit()
         raise ReusedRefreshTokenError(session.user_id, session.family_id, revoked)
 
-    async def _logout(self, refresh_token: str | None) -> LogoutResult:
+    async def _logout(self, refresh_token: str | None, request_id: str | None) -> LogoutResult:
         if not refresh_token:
             return LogoutResult(revoked=False)
         try:
@@ -304,6 +423,13 @@ class AuthService:
         if session is None or session.revoked_at is not None:
             return LogoutResult(revoked=False)
         self._sessions.mark_revoked(session, RevocationReason.LOGOUT, self._now())
+        self._audit(
+            AuditEventCode.AUTH_LOGOUT,
+            request_id=request_id,
+            actor_id=session.user_id,
+            user_id=session.user_id,
+            metadata={"session_family_id": str(session.family_id)},
+        )
         return LogoutResult(revoked=True, user_id=session.user_id, session_id=session.id)
 
     async def _start_session(

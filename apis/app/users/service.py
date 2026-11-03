@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 from pwdlib import PasswordHash
+from pydantic import SecretStr
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,7 @@ from app.core.security.access_tokens import utc_now
 from app.core.security.passwords import DEFAULT_PASSWORD_HASHER, hash_password
 from app.users.constants import RoleCode, UserStatus
 from app.users.errors import (
+    AdministratorAlreadyExistsError,
     EmailAlreadyExistsError,
     LastAdministratorError,
     SelfLockoutError,
@@ -68,36 +70,72 @@ class StaffService:
         self, actor: Actor, data: StaffCreate, *, request_id: str | None = None
     ) -> User:
         require_permissions(actor, Permission.STAFF_CREATE)
+        return await self._unit_of_work(
+            lambda: self._create(data, actor.user_id, AuditEventCode.STAFF_CREATED, request_id)
+        )
+
+    async def bootstrap_administrator(
+        self, email: str, full_name: str, password: str, *, allow_additional: bool = False
+    ) -> User:
+        """Create an administrator with no acting user, for first-time setup.
+
+        Only the operator CLI calls this. It refuses while any active administrator
+        exists unless ``allow_additional`` is set. Input goes through the same schema,
+        hashing, and audit path as the API; the event has no actor.
+        """
+        data = StaffCreate(
+            email=email,
+            full_name=full_name,
+            password=SecretStr(password),
+            roles=[RoleCode.ADMINISTRATOR],
+        )
 
         async def work() -> User:
-            if await self._users.email_taken(data.email):
-                raise EmailAlreadyExistsError()
-            roles = await self._roles([role.value for role in data.roles])
-            password_hash = await asyncio.to_thread(
-                hash_password, data.password.get_secret_value(), self._hasher
+            # The same lock as demotion and disabling, so two bootstraps cannot race.
+            await self._users.lock_administrator_set()
+            if not allow_additional and await self._users.count_active_administrators():
+                raise AdministratorAlreadyExistsError()
+            return await self._create(
+                data, None, AuditEventCode.STAFF_BOOTSTRAP_ADMIN_CREATED, None
             )
-            user = User(
-                id=uuid.uuid4(),
-                email=data.email,
-                full_name=data.full_name,
-                password_hash=password_hash,
-                status=UserStatus.ACTIVE,
-                created_by_id=actor.user_id,
-                updated_by_id=actor.user_id,
-            )
-            user.roles = roles
-            self._db.add(user)
-            await self._flush_unique_email()
-            self._audit(
-                AuditEventCode.STAFF_CREATED,
-                actor,
-                user.id,
-                request_id,
-                {"roles": sorted(role.code for role in roles)},
-            )
-            return await self._fresh(user)
 
         return await self._unit_of_work(work)
+
+    async def _create(
+        self,
+        data: StaffCreate,
+        actor_id: uuid.UUID | None,
+        code: AuditEventCode,
+        request_id: str | None,
+    ) -> User:
+        if await self._users.email_taken(data.email):
+            raise EmailAlreadyExistsError()
+        roles = await self._roles([role.value for role in data.roles])
+        password_hash = await asyncio.to_thread(
+            hash_password, data.password.get_secret_value(), self._hasher
+        )
+        user = User(
+            id=uuid.uuid4(),
+            email=data.email,
+            full_name=data.full_name,
+            password_hash=password_hash,
+            status=UserStatus.ACTIVE,
+            created_by_id=actor_id,
+            updated_by_id=actor_id,
+        )
+        user.roles = roles
+        self._db.add(user)
+        await self._flush_unique_email()
+        record_audit_event(
+            self._db,
+            code,
+            actor_id=actor_id,
+            request_id=request_id,
+            entity_type=ENTITY_TYPE,
+            entity_id=user.id,
+            metadata={"roles": sorted(role.code for role in roles)},
+        )
+        return await self._fresh(user)
 
     async def update_profile(
         self,

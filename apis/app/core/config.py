@@ -2,7 +2,7 @@ import re
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, IPvAnyNetwork, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_SECRET_LENGTH = 32
@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     auth_refresh_window_seconds: int = Field(default=60, ge=1, le=86_400)
     auth_password_change_max_attempts: int = Field(default=5, ge=1, le=1_000)
     auth_password_change_window_seconds: int = Field(default=900, ge=1, le=86_400)
+    # /auth/logout, /auth/me, and /auth/me/permissions, per client IP.
+    auth_session_max_requests_per_ip: int = Field(default=300, ge=1, le=100_000)
+    auth_session_window_seconds: int = Field(default=60, ge=1, le=86_400)
+    rate_limit_key_prefix: str = Field(default="estatehub:rl", min_length=1, max_length=64)
+
+    # Proxies whose X-Forwarded-For header is trusted, as IPs or CIDR networks. Empty
+    # (the default) means the TCP peer address is always the client address.
+    trusted_proxies: list[IPvAnyNetwork] = []
 
     @field_validator(
         "jwt_secret_key", "refresh_token_hash_secret", "auth_cookie_domain", mode="before"

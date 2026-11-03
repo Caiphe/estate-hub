@@ -50,8 +50,15 @@ async def admin_headers(api: AsyncClient, admin: User) -> dict[str, str]:
 
 
 async def audit_events(session_factory: Sessions) -> list[AuditEvent]:
+    """Staff-administration events only; sign-ins in these tests write auth.* events."""
     async with session_factory() as db:
-        return list(await db.scalars(select(AuditEvent).order_by(AuditEvent.occurred_at)))
+        return list(
+            await db.scalars(
+                select(AuditEvent)
+                .where(AuditEvent.event_code.startswith("staff."))
+                .order_by(AuditEvent.occurred_at)
+            )
+        )
 
 
 async def only_event(session_factory: Sessions, code: str) -> AuditEvent:

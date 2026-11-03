@@ -11,6 +11,7 @@ from httpx import AsyncClient, Response
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 from pydantic import SecretStr
+from redis.asyncio import Redis
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,9 +22,11 @@ from app.auth.dependencies import (
     DbDep,
     get_auth_service,
     get_clock,
+    get_redis,
 )
 from app.auth.service import AuthService
 from app.core.config import Settings, get_settings
+from app.core.config import settings as app_settings
 from app.core.database import get_db_session
 from app.core.security.passwords import hash_password
 from app.users.constants import RoleCode, UserStatus
@@ -39,8 +42,29 @@ HASH_KEY = "test-only-refresh-key-Yb1Nc8Fe3Gh6Uj9Ik2Ol5Pa7"
 Sessions = async_sessionmaker[AsyncSession]
 
 
+# Tests use their own Redis database and a unique key prefix per settings object.
+TEST_REDIS_DB = 15
+TEST_KEY_PREFIX = "estatehub-test"
+
+
+def test_redis_url() -> str:
+    return app_settings.redis_url.rsplit("/", 1)[0] + f"/{TEST_REDIS_DB}"
+
+
+def make_redis() -> Redis:
+    client: Redis = Redis.from_url(test_redis_url(), decode_responses=True)
+    return client
+
+
 def make_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
+        "rate_limit_key_prefix": f"{TEST_KEY_PREFIX}:{uuid.uuid4().hex}",
+        # Generous limits so ordinary tests are never throttled; rate-limit tests lower them.
+        "auth_login_max_attempts_per_ip": 10_000,
+        "auth_login_max_attempts_per_email": 1_000,
+        "auth_refresh_max_attempts_per_ip": 10_000,
+        "auth_password_change_max_attempts": 1_000,
+        "auth_session_max_requests_per_ip": 100_000,
         "environment": "test",
         "cors_origins": ["http://localhost:3001"],
         "jwt_secret_key": SecretStr(JWT_KEY),
@@ -63,7 +87,13 @@ class Clock:
         self.now += timedelta(**delta)
 
 
-def override(target: FastAPI, session_factory: Sessions, settings: Settings, clock: Clock) -> None:
+def override(
+    target: FastAPI,
+    session_factory: Sessions,
+    settings: Settings,
+    clock: Clock,
+    redis: Redis | None = None,
+) -> None:
     async def db() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
             yield session
@@ -77,6 +107,7 @@ def override(target: FastAPI, session_factory: Sessions, settings: Settings, clo
             get_settings: lambda: settings,
             get_clock: lambda: clock,
             get_auth_service: service,
+            get_redis: lambda: redis or make_redis(),
         }
     )
 

@@ -183,3 +183,60 @@ All routes are under `/api/v1/staff`. Each requires the matching permission from
 - **Administrator safeguards:** an administrator cannot disable themselves or remove their own `administrator` role (`409 self_lockout`). Nobody can disable or demote the last active administrator (`409 last_administrator`). Both checks run under a transaction-scoped PostgreSQL advisory lock, so two concurrent requests cannot each remove "the other" administrator.
 - **Audit events** are written in the same transaction as the change: `staff.created` (roles), `staff.profile_updated` (changed field names), `staff.roles_changed` (before/after codes), `staff.disabled` and `staff.sessions_revoked` (revoked session count), and `staff.reactivated`. Each includes the actor, the target user ID, and the request ID. A request that changes nothing, or fails, writes no event. Passwords and hashes are never recorded.
 
+
+
+## Bootstrap administrator
+
+```bash
+docker compose run --rm api python -m app.cli create-admin --email admin@example.com --name "Admin Name"
+```
+
+- The password comes from a hidden `getpass` prompt entered twice, or from the first line of standard input with `--password-stdin` (only the line ending is stripped). There is no `--password` option, and no environment variable is read.
+- The command refuses (exit code `2`) while any active administrator exists, unless `--allow-additional-admin` is given. The check runs under the same advisory lock as administrator demotion, so concurrent runs cannot both pass.
+- It uses `StaffService.bootstrap_administrator`, which shares the API's validation (12–128 character password, email normalization), Argon2id hashing, and audit path. It records `staff.bootstrap_admin_created` with no actor.
+- Exit codes: `0` created, `1` invalid input or mismatched passwords, `2` refused. Errors name the field but never print the value.
+
+## Rate limiting
+
+Authentication endpoints are rate-limited with fixed-window counters in Redis, shared by every API process. Each request is counted before it is processed. Keys are `{RATE_LIMIT_KEY_PREFIX}:{rule}:{fingerprint}`, where the fingerprint is an HMAC of the email, IP address, or user ID under a key derived from `REFRESH_TOKEN_HASH_SECRET`. Raw emails and addresses never reach Redis.
+
+| Endpoint | Limited by | Settings (default) | Redis down |
+| --- | --- | --- | --- |
+| `POST /auth/token` | client IP **and** normalized email | `AUTH_LOGIN_MAX_ATTEMPTS_PER_IP` (20), `AUTH_LOGIN_MAX_ATTEMPTS_PER_EMAIL` (5), `AUTH_LOGIN_WINDOW_SECONDS` (900) | **fails closed**: `503 auth_service_unavailable` |
+| `POST /auth/change-password` | client IP **and** user ID | `AUTH_PASSWORD_CHANGE_MAX_ATTEMPTS` (5), `AUTH_PASSWORD_CHANGE_WINDOW_SECONDS` (900) | **fails closed** |
+| `POST /auth/refresh` | client IP (the user is unknown until the token is checked) | `AUTH_REFRESH_MAX_ATTEMPTS_PER_IP` (60), `AUTH_REFRESH_WINDOW_SECONDS` (60) | fails open, logs a warning |
+| `POST /auth/logout`, `GET /auth/me`, `GET /auth/me/permissions` | client IP | `AUTH_SESSION_MAX_REQUESTS_PER_IP` (300), `AUTH_SESSION_WINDOW_SECONDS` (60) | fails open, logs a warning |
+
+- **Exceeding a limit** returns `429 auth_rate_limited` with `Retry-After` (seconds until the window resets). Successful logins count too. A correct password does not bypass an active limit.
+- **No email enumeration.** Limits are checked before the email is looked up, so known and unknown emails give identical responses.
+- **Redis outages.** Login and password change are the credential-guessing surfaces, so they refuse service rather than run unprotected. Refresh, logout, and the read endpoints already need a valid session or access token, so they keep working. `GET /health/ready` returns `503` whenever Redis is unreachable.
+
+### Client IP and proxies
+
+The client address is the TCP peer address unless the peer is listed in `ESTATEHUB_TRUSTED_PROXIES` (JSON list of IPs or CIDRs, empty by default). Only then is `X-Forwarded-For` read, from the right, skipping trusted proxies; the first untrusted address is the client. Addresses a client adds to the header itself are never reached, so forged headers cannot dodge per-IP limits. When deploying behind a proxy, set this to the proxy's addresses. Keep Uvicorn's own `--forwarded-allow-ips` at its default, or set it to the same addresses, so the two do not disagree. The resolved address is stored only as a /24 (IPv4) or /48 (IPv6) prefix.
+
+**Behind the web app.** Browser traffic reaches the API through the Next.js `/api/v1` rewrite. Next.js forwards the client's own `X-Forwarded-For` unchanged and does not append the real peer address. Trusting the web container on its own would therefore let any browser choose its rate-limit IP. Instead:
+
+- **Development** trusts no proxies, so every browser request counts as the web container's address. Per-IP limits are shared, but they cannot be spoofed, and per-email and per-user limits are unaffected.
+- **Production** must put a reverse proxy or load balancer in front of the web app that appends the real client address to `X-Forwarded-For`. Set `ESTATEHUB_TRUSTED_PROXIES` to that proxy's addresses **and** the web servers' addresses. The API then reads the rightmost untrusted entry, which is the address the load balancer appended.
+
+## Audit log
+
+Audit events are inserted by the application and never updated or deleted through it (the ORM refuses both). Metadata is validated and cannot contain credentials, tokens, or request bodies.
+
+| Code | Actor | Recorded when | Metadata |
+| --- | --- | --- | --- |
+| `auth.login_succeeded` | the user | a login succeeds | `session_family_id`, `client_ip_prefix`, `hash_upgraded` if the password hash was upgraded |
+| `auth.login_failed` | none | a login fails | `reason` (`unknown_email`, `wrong_password`, `user_disabled`), `email_fingerprint` (HMAC, never the email), `client_ip_prefix` |
+| `auth.rate_limited` | the user, when known | the first rejected request per key and window | `rule`, `client_ip_prefix`, `email_fingerprint` for the per-email rule |
+| `auth.refresh_token_reused` | none | a rotated refresh token is replayed | `session_family_id`, `revoked_sessions` |
+| `auth.logout` | the user | a session is actually revoked | `session_family_id` |
+| `auth.password_changed` | the user | a password change commits | `revoked_sessions` |
+| `auth.permission_denied` | the user | a permission guard returns `403` | `required_permissions`, `permission_mode`, `method`, `path` |
+| `staff.bootstrap_admin_created` | none | the CLI creates an administrator | `roles` |
+| `staff.*` | the administrator | see [Staff management](#staff-management) | |
+
+Every event carries the request ID when there is one. Successful-change events share the change's transaction. Failure events (`auth.login_failed`, `auth.rate_limited`, `auth.permission_denied`) are written in their own transaction, because the failed work is rolled back.
+
+`GET /api/v1/audit-events` (`audit:read`) lists events newest first, with the ID as tie-breaker. It returns `Page[AuditEventPublic]`. Filters: `event_code`, `actor_id`, `entity_type`, `entity_id`, `occurred_from` (inclusive) and `occurred_to` (exclusive), both timezone-aware. Pagination: `limit` (1–100) and `offset`.
+

@@ -20,11 +20,13 @@ class AuthAPIError(Exception):
         *,
         clear_cookies: bool = False,
         fields: dict[str, list[str]] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(code.value)
         self.code = code
         self.clear_cookies = clear_cookies
         self.fields = fields
+        self.headers = headers or {}
 
 
 def _settings_for(request: Request) -> Settings:
@@ -38,7 +40,9 @@ def _settings_for(request: Request) -> Settings:
 async def _auth_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AuthAPIError)
     spec = AUTH_ERRORS[exc.code]
-    headers = {"WWW-Authenticate": "Bearer"} if spec.status_code == 401 else None
+    headers = dict(exc.headers)
+    if spec.status_code == 401:
+        headers["WWW-Authenticate"] = "Bearer"
     response = error_response(
         request, spec.status_code, exc.code.value, spec.message, exc.fields, headers
     )

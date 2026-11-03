@@ -81,7 +81,7 @@ class UserRepository:
         """
         await self._db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _ADMIN_LOCK})
 
-    async def count_active_administrators(self, *, excluding: uuid.UUID) -> int:
+    async def count_active_administrators(self, *, excluding: uuid.UUID | None = None) -> int:
         statement = (
             select(func.count(func.distinct(User.id)))
             .join(user_roles, user_roles.c.user_id == User.id)
@@ -89,9 +89,10 @@ class UserRepository:
             .where(
                 Role.code == RoleCode.ADMINISTRATOR.value,
                 User.status == UserStatus.ACTIVE,
-                User.id != excluding,
             )
         )
+        if excluding is not None:
+            statement = statement.where(User.id != excluding)
         return int(await self._db.scalar(statement) or 0)
 
 

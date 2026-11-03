@@ -5,8 +5,17 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from auth_support import EMAIL, Clock, create_user, make_settings, override
+from auth_support import (
+    EMAIL,
+    TEST_KEY_PREFIX,
+    Clock,
+    create_user,
+    make_redis,
+    make_settings,
+    override,
+)
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -92,12 +101,42 @@ def settings() -> Settings:
     return make_settings()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _clean_test_redis_keys() -> Iterator[None]:
+    yield
+
+    async def clean() -> None:
+        redis = make_redis()
+        try:
+            keys = [key async for key in redis.scan_iter(f"{TEST_KEY_PREFIX}:*")]
+            if keys:
+                await redis.delete(*keys)
+        except OSError:
+            pass
+        finally:
+            await redis.aclose()
+
+    asyncio.run(clean())
+
+
+@pytest.fixture
+async def test_redis() -> AsyncIterator[Redis]:
+    redis = make_redis()
+    try:
+        yield redis
+    finally:
+        await redis.aclose()
+
+
 @pytest.fixture
 async def api(
-    session_factory: async_sessionmaker[AsyncSession], settings: Settings, clock: Clock
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    clock: Clock,
+    test_redis: Redis,
 ) -> AsyncIterator[AsyncClient]:
-    """Client for the real app, wired to the test database, settings, and clock."""
-    override(app, session_factory, settings, clock)
+    """Client for the real app, wired to the test database, Redis, settings, and clock."""
+    override(app, session_factory, settings, clock, test_redis)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             yield client

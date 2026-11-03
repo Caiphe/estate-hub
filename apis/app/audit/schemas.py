@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Any, Self
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from app.audit.metadata import validate_audit_metadata
 from app.audit.models import (
@@ -11,6 +11,7 @@ from app.audit.models import (
     EVENT_CODE_PATTERN,
     REQUEST_ID_MAX_LENGTH,
 )
+from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, PageOffset
 
 EventCode = Annotated[str, Field(pattern=EVENT_CODE_PATTERN, max_length=EVENT_CODE_MAX_LENGTH)]
 SafeMetadata = Annotated[dict[str, Any], AfterValidator(validate_audit_metadata)]
@@ -48,3 +49,24 @@ class AuditEventPublic(BaseModel):
     occurred_at: datetime
     request_id: str | None
     metadata: dict[str, Any] = Field(validation_alias="details")
+
+
+class AuditEventQuery(BaseModel):
+    """Filters and paging for the audit log. Results are newest first."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_code: EventCode | None = None
+    actor_id: UUID | None = None
+    entity_type: str | None = Field(default=None, min_length=1, max_length=ENTITY_TYPE_MAX_LENGTH)
+    entity_id: UUID | None = None
+    occurred_from: AwareDatetime | None = Field(default=None, description="Inclusive.")
+    occurred_to: AwareDatetime | None = Field(default=None, description="Exclusive.")
+    limit: PageLimit = DEFAULT_PAGE_SIZE
+    offset: PageOffset = 0
+
+    @model_validator(mode="after")
+    def _ordered_range(self) -> Self:
+        if self.occurred_from and self.occurred_to and self.occurred_from >= self.occurred_to:
+            raise ValueError("occurred_from must be before occurred_to.")
+        return self

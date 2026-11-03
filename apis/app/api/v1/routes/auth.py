@@ -1,12 +1,19 @@
 import logging
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
-from fastapi.security import OAuth2PasswordRequestForm
 
 from app.auth.constants import AuthErrorCode
 from app.auth.cookies import clear_auth_cookies, set_auth_cookies
-from app.auth.dependencies import AuthServiceDep, CurrentIdentityDep, SettingsDep
+from app.auth.dependencies import (
+    AuthServiceDep,
+    ClientDep,
+    CurrentIdentityDep,
+    LoginForm,
+    SettingsDep,
+    limit_password_change,
+    limit_refresh,
+    limit_session,
+)
 from app.auth.errors import (
     AuthServiceError,
     IncorrectCurrentPasswordError,
@@ -14,7 +21,6 @@ from app.auth.errors import (
 )
 from app.auth.http import AuthAPIError, require_csrf
 from app.auth.schemas import (
-    ClientMetadata,
     EffectivePermissions,
     PasswordChange,
     TokenResponse,
@@ -22,6 +28,7 @@ from app.auth.schemas import (
 from app.auth.service import IssuedSession
 from app.core.config import Settings
 from app.core.errors import ErrorResponse
+from app.core.middleware import get_request_id
 from app.core.security.opaque_tokens import generate_csrf_token
 from app.users.schemas import UserPublic
 
@@ -31,13 +38,10 @@ router = APIRouter()
 _ERRORS: dict[int | str, dict[str, object]] = {
     401: {"model": ErrorResponse},
     403: {"model": ErrorResponse},
+    429: {"model": ErrorResponse, "description": "`auth_rate_limited`; see `Retry-After`."},
+    503: {"model": ErrorResponse, "description": "`auth_service_unavailable`."},
 }
 _PROTECTED_ERRORS: dict[int | str, dict[str, object]] = _ERRORS | {422: {"model": ErrorResponse}}
-
-
-def _client(request: Request) -> ClientMetadata:
-    host = request.client.host if request.client else None
-    return ClientMetadata.from_request_values(request.headers.get("user-agent"), host)
 
 
 def _token_response(response: Response, settings: Settings, issued: IssuedSession) -> TokenResponse:
@@ -69,9 +73,10 @@ def _token_response(response: Response, settings: Settings, issued: IssuedSessio
 async def login(
     request: Request,
     response: Response,
-    form: Annotated[OAuth2PasswordRequestForm, Depends()],
+    form: LoginForm,
     service: AuthServiceDep,
     settings: SettingsDep,
+    client: ClientDep,
 ) -> TokenResponse:
     """OAuth2 password flow. `username` is the staff email address.
 
@@ -79,7 +84,9 @@ async def login(
     and CSRF cookies for browsers. The refresh token is only ever sent as a cookie.
     """
     try:
-        issued = await service.authenticate(form.username, form.password, _client(request))
+        issued = await service.authenticate(
+            form.username, form.password, client, request_id=get_request_id(request)
+        )
     except AuthServiceError as exc:
         raise AuthAPIError(exc.public_code) from None
     return _token_response(response, settings, issued)
@@ -89,6 +96,7 @@ async def login(
     "/refresh",
     response_model=TokenResponse,
     responses=_ERRORS,
+    dependencies=[Depends(limit_refresh)],
     summary="Rotate the refresh session",
 )
 async def refresh(
@@ -96,6 +104,7 @@ async def refresh(
     response: Response,
     service: AuthServiceDep,
     settings: SettingsDep,
+    client: ClientDep,
 ) -> TokenResponse:
     """Browser-only: reads the refresh cookie and requires the `X-CSRF-Token` header.
 
@@ -106,7 +115,7 @@ async def refresh(
     if not refresh_token:
         raise AuthAPIError(AuthErrorCode.INVALID_SESSION, clear_cookies=True)
     try:
-        issued = await service.refresh(refresh_token, _client(request))
+        issued = await service.refresh(refresh_token, client, request_id=get_request_id(request))
     except ReusedRefreshTokenError as exc:
         logger.warning(
             "Refresh token reuse detected; session family revoked",
@@ -121,7 +130,8 @@ async def refresh(
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses={403: {"model": ErrorResponse}},
+    responses={403: {"model": ErrorResponse}, 429: _ERRORS[429]},
+    dependencies=[Depends(limit_session)],
     summary="Sign out",
 )
 async def logout(
@@ -138,7 +148,7 @@ async def logout(
     refresh_token = request.cookies.get(settings.auth_refresh_cookie_name)
     if refresh_token:
         require_csrf(request, settings)
-        await service.logout(refresh_token)
+        await service.logout(refresh_token, request_id=get_request_id(request))
     clear_auth_cookies(response, settings)
     response.status_code = status.HTTP_204_NO_CONTENT
 
@@ -147,6 +157,7 @@ async def logout(
     "/me",
     response_model=UserPublic,
     responses=_ERRORS,
+    dependencies=[Depends(limit_session)],
     summary="Current staff member",
 )
 async def me(identity: CurrentIdentityDep, response: Response) -> UserPublic:
@@ -159,6 +170,7 @@ async def me(identity: CurrentIdentityDep, response: Response) -> UserPublic:
     "/me/permissions",
     response_model=EffectivePermissions,
     responses=_ERRORS,
+    dependencies=[Depends(limit_session)],
     summary="Current staff member's effective permissions",
 )
 async def my_permissions(identity: CurrentIdentityDep, response: Response) -> EffectivePermissions:
@@ -178,9 +190,11 @@ async def my_permissions(identity: CurrentIdentityDep, response: Response) -> Ef
     "/change-password",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=_PROTECTED_ERRORS,
+    dependencies=[Depends(limit_password_change)],
     summary="Change your own password",
 )
 async def change_password(
+    request: Request,
     payload: PasswordChange,
     identity: CurrentIdentityDep,
     service: AuthServiceDep,
@@ -198,6 +212,7 @@ async def change_password(
             identity.user.id,
             payload.current_password.get_secret_value(),
             payload.new_password.get_secret_value(),
+            request_id=get_request_id(request),
         )
     except IncorrectCurrentPasswordError as exc:
         raise AuthAPIError(
