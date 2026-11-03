@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
+from app.auth.constants import CSRF_HEADER_NAME
 from app.core.config import settings
 from app.core.database import engine
 from app.core.errors import register_exception_handlers
@@ -33,7 +34,7 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
+        allow_headers=["Authorization", "Content-Type", CSRF_HEADER_NAME, REQUEST_ID_HEADER],
         expose_headers=[REQUEST_ID_HEADER],
     )
     register_exception_handlers(application)

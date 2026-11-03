@@ -1,0 +1,50 @@
+from datetime import datetime
+from typing import Annotated, Any, Self
+from uuid import UUID
+
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+
+from app.audit.metadata import validate_audit_metadata
+from app.audit.models import (
+    ENTITY_TYPE_MAX_LENGTH,
+    EVENT_CODE_MAX_LENGTH,
+    EVENT_CODE_PATTERN,
+    REQUEST_ID_MAX_LENGTH,
+)
+
+EventCode = Annotated[str, Field(pattern=EVENT_CODE_PATTERN, max_length=EVENT_CODE_MAX_LENGTH)]
+SafeMetadata = Annotated[dict[str, Any], AfterValidator(validate_audit_metadata)]
+
+
+class AuditEventCreate(BaseModel):
+    """Internal input for recording an audit event. Never built from client input."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    event_code: EventCode
+    actor_id: UUID | None = None
+    entity_type: str | None = Field(default=None, min_length=1, max_length=ENTITY_TYPE_MAX_LENGTH)
+    entity_id: UUID | None = None
+    request_id: str | None = Field(default=None, max_length=REQUEST_ID_MAX_LENGTH)
+    metadata: SafeMetadata = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _entity_reference_complete(self) -> Self:
+        if (self.entity_type is None) != (self.entity_id is None):
+            raise ValueError("entity_type and entity_id must be provided together.")
+        return self
+
+
+class AuditEventPublic(BaseModel):
+    """Audit event output for staff with audit-read permission."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    event_code: str
+    actor_id: UUID | None
+    entity_type: str | None
+    entity_id: UUID | None
+    occurred_at: datetime
+    request_id: str | None
+    metadata: dict[str, Any] = Field(validation_alias="details")

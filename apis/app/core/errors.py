@@ -1,9 +1,9 @@
 import logging
 from collections.abc import Mapping
-from typing import Any
 
 from fastapi import FastAPI, status
 from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -25,6 +25,19 @@ _STATUS_CODES: dict[int, str] = {
 }
 
 
+class ErrorDetail(BaseModel):
+    code: str = Field(examples=["invalid_credentials"])
+    message: str = Field(examples=["Incorrect email or password."])
+    fields: dict[str, list[str]] = Field(default_factory=dict)
+    request_id: str = Field(examples=["3f1c9a52-7d1e-4b8e-9b0a-2f4c6d8e1a3b"])
+
+
+class ErrorResponse(BaseModel):
+    """The standard error body returned by every endpoint."""
+
+    error: ErrorDetail
+
+
 def error_response(
     request: Request,
     status_code: int,
@@ -34,18 +47,13 @@ def error_response(
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     request_id = get_request_id(request)
-    body: dict[str, Any] = {
-        "error": {
-            "code": code,
-            "message": message,
-            "fields": fields or {},
-            "request_id": request_id,
-        }
-    }
+    body = ErrorResponse(
+        error=ErrorDetail(code=code, message=message, fields=fields or {}, request_id=request_id)
+    )
     response_headers = dict(headers or {})
     if request_id:
         response_headers[REQUEST_ID_HEADER] = request_id
-    return JSONResponse(body, status_code=status_code, headers=response_headers)
+    return JSONResponse(body.model_dump(), status_code=status_code, headers=response_headers)
 
 
 async def _http_exception_handler(request: Request, exc: Exception) -> JSONResponse:

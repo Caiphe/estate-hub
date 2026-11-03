@@ -42,5 +42,11 @@ def test_production_requires_https_cors_origins() -> None:
     with pytest.raises(ValidationError, match="HTTPS"):
         Settings(environment="production", cors_origins=["http://estatehub.example"])
 
-    settings = Settings(environment="production", cors_origins=["https://estatehub.example"])
+    settings = Settings(
+        environment="production",
+        cors_origins=["https://estatehub.example"],
+        auth_cookie_secure=True,
+        jwt_secret_key="test-jwt-3f9a1c7e5b2d4086a1f3c5e7b9d0f2a4",
+        refresh_token_hash_secret="test-hash-8b2e4d6f0a1c3e5g7i9k1m3o5q7s9u1w",
+    )
     assert settings.cors_origins == ["https://estatehub.example"]
