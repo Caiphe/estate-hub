@@ -4,8 +4,8 @@
  * one-line change. Requirements are documented in `assets/images/README.md`.
  */
 
-import heroImage from "../../assets/images/header-banner.png";
-import investmentBannerPlaceholder from "../../assets/images/placeholders/investment-banner.svg";
+import heroImage from "../../assets/images/header-banner.jpg";
+import investmentBannerImage from "../../assets/images/header-banner-1.png";
 import propertyCardPlaceholder from "../../assets/images/placeholders/property-card.svg";
 
 import type { ImageAsset } from "./types";
@@ -20,9 +20,11 @@ export type AssetRequirement = {
 };
 
 export const ASSET_REQUIREMENTS = {
-  hero: { aspectRatio: 16 / 9, minWidth: 1600, minHeight: 900 },
+  // Always cropped to its box (≈1.2:1 at desktop, 16:9 below), so 3:2 covers both.
+  hero: { aspectRatio: 3 / 2, minWidth: 2400, minHeight: 1600 },
   propertyCard: { aspectRatio: 16 / 9, minWidth: 960, minHeight: 540 },
-  investmentBanner: { aspectRatio: 3, minWidth: 2400, minHeight: 800 },
+  // Fills only the banner's right side (≈2.5:1 at desktop, 16:9 stacked), cropped to fit.
+  investmentBanner: { aspectRatio: 16 / 9, minWidth: 1600, minHeight: 900 },
 } as const satisfies Record<AssetSlot, AssetRequirement>;
 
 export type ManifestEntry = ImageAsset & {
@@ -36,7 +38,7 @@ export const LANDING_ASSETS = {
     slot: "hero",
     status: "final",
     src: heroImage,
-    alt: "Modern two-storey villa with floor-to-ceiling windows beside a pool at sunset",
+    alt: "A family sharing mugs of tea on the living-room rug of a bright, airy home",
   },
   modernDuplex: {
     slot: "propertyCard",
@@ -59,8 +61,8 @@ export const LANDING_ASSETS = {
   // Decorative: the banner heading and copy carry the meaning.
   investmentBanner: {
     slot: "investmentBanner",
-    status: "placeholder",
-    src: investmentBannerPlaceholder,
+    status: "final",
+    src: investmentBannerImage,
     alt: "",
   },
 } as const satisfies Record<string, ManifestEntry>;

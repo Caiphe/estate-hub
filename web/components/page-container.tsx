@@ -7,6 +7,6 @@ type PageContainerProps = HTMLAttributes<HTMLElement> & {
 
 /** Centers content at the shared maximum width with fluid side gutters. */
 export function PageContainer({ as: Component = "div", className, ...rest }: PageContainerProps) {
-  const classes = className ? `page-container ${className}` : "page-container";
+  const classes = className ? `container-page ${className}` : "container-page";
   return <Component className={classes} {...rest} />;
 }

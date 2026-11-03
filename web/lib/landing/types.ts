@@ -32,34 +32,43 @@ export type LandingIconName =
 
 export type ListingType = "sale" | "rent" | "investment";
 
-export type RentPeriod = "month" | "year";
+export type BillingPeriod = "month" | "year";
 
-export type Money = {
-  /** Whole currency units; avoids float rounding in display. */
-  amount: number;
-  /** ISO 4217 code, e.g. "USD" or "NGN". */
+/**
+ * A price exactly as the API serializes a decimal: a string such as "450000.00". It is
+ * formatted straight from the string and never converted to a float.
+ */
+export type Price = {
+  amount: string;
+  /** ISO 4217 code, e.g. "ZAR". */
   currency: string;
+  /** Set for recurring prices such as rent; omitted for one-off prices. */
+  period?: BillingPeriod;
 };
 
-export type PropertyLocation = {
-  area: string;
-  city: string;
+export type AreaUnit = "sqft" | "sqm";
+
+export type FloorArea = {
+  value: number;
+  unit: AreaUnit;
 };
 
-/** The card-level view of a listing. Optional counts are omitted for non-residential stock. */
+/** The card-level view of a listing. Facts that do not apply (e.g. bedrooms on a plaza) are omitted. */
 export type PropertySummary = {
   id: string;
+  /** URL segment for the future detail route, /properties/{slug}. */
+  slug: string;
   title: string;
-  href: string;
+  /** Display-ready, e.g. "Lekki, Lagos". */
+  locationLabel: string;
   listingType: ListingType;
-  location: PropertyLocation;
-  price: Money;
-  /** Present only when `listingType` is "rent". */
-  rentPeriod?: RentPeriod;
+  price: Price;
+  image: ImageAsset;
   bedrooms?: number;
   bathrooms?: number;
-  floorAreaSqft: number;
-  image: ImageAsset;
+  floorArea?: FloorArea;
+  /** Presentation only; favorites are not persisted yet. */
+  isFavorite?: boolean;
 };
 
 export type ValueProposition = {
@@ -76,9 +85,17 @@ export type ProcessStep = {
   description: string;
 };
 
+/** A destination that does not exist yet. Rendered as text marked "Soon", never as a dead link. */
+export type PlannedLink = {
+  label: string;
+  planned: true;
+};
+
+export type FooterLink = NavLink | PlannedLink;
+
 export type FooterLinkGroup = {
   heading: string;
-  links: readonly NavLink[];
+  links: readonly FooterLink[];
 };
 
 export type SocialPlatform = "linkedin" | "x" | "facebook" | "instagram" | "youtube";

@@ -6,9 +6,9 @@ wrong ratio is cropped (`object-fit: cover`), never stretched.
 
 | Slot | Aspect ratio | Minimum source | Recommended | Composition |
 | --- | --- | --- | --- | --- |
-| Hero | 16:9 | 1600 × 900 | 2400 × 1350 | Wide architectural shot. The building fills the right half and bleeds to the edge; the left third is calm sky or wash behind the heading. |
+| Hero | 3:2 | 2400 × 1600 | 3000 × 2000 | Always cropped to its box (≈1.2:1 at desktop, 16:9 below). Keep the subject right of centre and in the upper two-thirds; the left edge fades into the page wash behind the heading. |
 | Property card | 16:9 | 960 × 540 | 1280 × 720 | Consistent landscape crop of the building exterior; subject centered, no text or watermark. |
-| Investment banner | 3:1 | 2400 × 800 | 3000 × 1000 | Panoramic crop. Subject in the right 45%; the left 55% is dark or low-detail, safe for white text. |
+| Investment banner | 16:9 | 1600 × 900 | 2400 × 1350 | Architectural shot. Fills only the banner's right side (≈2.5:1 at desktop, 16:9 when stacked) and fades into the forest-green text zone, so keep the building right of centre. |
 
 Use PNG, JPEG, or WebP. Next.js serves optimized responsive variants, but keep sources under
 about 3 MB.
@@ -24,11 +24,11 @@ about 3 MB.
 
 | Entry | File | Status |
 | --- | --- | --- |
-| Hero | `header-banner.png` (1672 × 941) | Final. Meets the minimum; supply 2400 px wide for sharper 2× displays. |
+| Hero | `header-banner.jpg` (5509 × 3673) | Final. A family at home; crop point set in `hero-media.tsx`. 3.5 MB source; Next.js serves resized variants. |
 | Modern Duplex in Lekki | `placeholders/property-card.svg` | **Missing**: needs a photograph. |
 | Palm Heights Apartments | `placeholders/property-card.svg` | **Missing**: needs a photograph. |
 | Victoria Commercial Plaza | `placeholders/property-card.svg` | **Missing**: needs a photograph. |
-| Investment banner | `placeholders/investment-banner.svg` | **Missing**: needs a panoramic photograph. |
+| Investment banner | `header-banner-1.png` (1672 × 941) | Final. The villa that was the original hero; decorative (`alt=""`). |
 
 `auth-banner.png` belongs to the sign-in page. `logo.png` is a raster with a white
 background and a gold accent outside the landing palette; Prompt 02 decides between it and

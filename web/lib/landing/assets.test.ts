@@ -7,11 +7,21 @@ import { ASSET_REQUIREMENTS, LANDING_ASSETS, type ManifestEntry } from "./assets
 
 const entries: [string, ManifestEntry][] = Object.entries(LANDING_ASSETS);
 
-/** Reads width and height from a PNG's IHDR chunk. */
-function pngSize(path: string): { width: number; height: number } {
-  const header = readFileSync(path);
-  expect(header.subarray(1, 4).toString("ascii")).toBe("PNG");
-  return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+/** Reads pixel dimensions from a PNG IHDR chunk or a JPEG start-of-frame marker. */
+function imageSize(path: string): { width: number; height: number } {
+  const bytes = readFileSync(path);
+  if (bytes.subarray(1, 4).toString("ascii") === "PNG") {
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+  expect(bytes.readUInt16BE(0)).toBe(0xffd8); // JPEG
+  for (let offset = 2; offset < bytes.length; offset += 2 + bytes.readUInt16BE(offset + 2)) {
+    const marker = bytes.readUInt16BE(offset);
+    // SOF0–SOF15, excluding DHT (C4), JPG (C8), and DAC (CC).
+    if (marker >= 0xffc0 && marker <= 0xffcf && ![0xffc4, 0xffc8, 0xffcc].includes(marker)) {
+      return { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) };
+    }
+  }
+  throw new Error(`No image dimensions found in ${path}`);
 }
 
 describe("landing asset manifest", () => {
@@ -36,7 +46,7 @@ describe("landing asset manifest", () => {
     "%s meets its slot's size and aspect requirements",
     (_key, entry) => {
       expect(typeof entry.src).toBe("string");
-      const { width, height } = pngSize(join(process.cwd(), entry.src as string));
+      const { width, height } = imageSize(join(process.cwd(), entry.src as string));
       const required = ASSET_REQUIREMENTS[entry.slot];
 
       expect(width).toBeGreaterThanOrEqual(required.minWidth);
