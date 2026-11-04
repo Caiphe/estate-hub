@@ -142,6 +142,51 @@ describe("ApiClient requests", () => {
   });
 });
 
+describe("ApiClient cancellation", () => {
+  /** Like the browser's fetch: never settles on its own, rejects when the signal aborts. */
+  function hangingFetch() {
+    const signals: Array<AbortSignal | undefined> = [];
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      signals.push(init?.signal ?? undefined);
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("The operation was aborted.", "AbortError")),
+        );
+      });
+    });
+    return { fetchImpl: fetchImpl as unknown as typeof fetch, signals };
+  }
+
+  it("passes the signal to fetch", async () => {
+    const { fetchImpl, signals } = hangingFetch();
+    const controller = new AbortController();
+    const pending = new ApiClient({ fetch: fetchImpl }).request("/staff", { signal: controller.signal });
+
+    expect(signals).toEqual([controller.signal]);
+    controller.abort();
+    await expect(pending).rejects.toThrow();
+  });
+
+  it("rejects an aborted request with the abort reason, not NetworkError", async () => {
+    const { fetchImpl } = hangingFetch();
+    const controller = new AbortController();
+    const pending = new ApiClient({ fetch: fetchImpl }).request("/staff", { signal: controller.signal });
+    controller.abort();
+
+    const error = await pending.catch((reason: unknown) => reason);
+    expect(error).not.toBeInstanceOf(NetworkError);
+    expect((error as DOMException).name).toBe("AbortError");
+  });
+
+  it("still reports real network failures as NetworkError when a signal is given", async () => {
+    const api = fakeApi({ "GET /staff": [() => Promise.reject(new TypeError("Failed to fetch"))] });
+
+    await expect(api.client.request("/staff", { signal: new AbortController().signal })).rejects.toBeInstanceOf(
+      NetworkError,
+    );
+  });
+});
+
 describe("ApiClient refresh", () => {
   it("refreshes once and retries with the rotated CSRF token", async () => {
     const api = fakeApi({

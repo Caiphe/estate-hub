@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState, type FormEvent } from "react";
 
 import { roleLabel } from "@/components/role-checkboxes";
 import { Pagination } from "@/components/pagination";
 import { Forbidden, LoadError, Loading } from "@/components/status-panels";
-import { ROLE_OPTIONS, staffApi, type StaffQuery } from "@/lib/api/staff";
+import { ROLE_OPTIONS, normalizeStaffSearch, staffApi, type StaffQuery } from "@/lib/api/staff";
 import { useSession } from "@/lib/session";
 import { useRemote } from "@/lib/use-remote";
 
@@ -17,10 +18,24 @@ function formatDate(value: string | null): string {
 }
 
 export default function StaffListPage() {
+  return (
+    <Suspense fallback={<Loading label="Loading staff…" />}>
+      <StaffListFromUrl />
+    </Suspense>
+  );
+}
+
+/** Starts from the top-bar search (`/staff?q=…`); a new search starts over with fresh filters. */
+function StaffListFromUrl() {
+  const q = normalizeStaffSearch(useSearchParams().get("q"));
+  return <StaffList key={q} initialSearch={q} />;
+}
+
+function StaffList({ initialSearch }: { initialSearch: string }) {
   const { client, permissions } = useSession();
   const api = useMemo(() => staffApi(client), [client]);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState<StaffQuery>({ status: "", role: "", q: "", offset: 0 });
+  const [search, setSearch] = useState(initialSearch);
+  const [query, setQuery] = useState<StaffQuery>({ status: "", role: "", q: initialSearch, offset: 0 });
   const key = JSON.stringify(query);
   const [remote, reload] = useRemote(key, () => api.list({ ...query, limit: PAGE_SIZE }));
 

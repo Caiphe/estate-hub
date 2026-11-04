@@ -1,3 +1,5 @@
+import { notifyStaffChanged } from "../staff-changes";
+
 import type { ApiClient } from "./client";
 import { ResponseShapeError, parseCurrentUser, type CurrentUser } from "./types";
 
@@ -30,6 +32,14 @@ export type StaffQuery = {
   limit?: number;
   offset?: number;
 };
+
+/** The API refuses longer searches with a validation error. */
+export const STAFF_SEARCH_MAX_LENGTH = 100;
+
+/** A search term as the API accepts it: trimmed, at most 100 characters (code points). */
+export function normalizeStaffSearch(value: string | null | undefined): string {
+  return [...(value ?? "").trim()].slice(0, STAFF_SEARCH_MAX_LENGTH).join("").trim();
+}
 
 export type AuditQuery = {
   eventCode?: string;
@@ -116,51 +126,69 @@ export function queryString(params: Record<string, string | number | undefined>)
 
 const staffPath = (id: string) => `/staff/${encodeURIComponent(id)}`;
 
+/** Passes a mutation's result through, after telling views that staff data changed. */
+async function changed<T>(mutation: Promise<T>): Promise<T> {
+  const result = await mutation;
+  notifyStaffChanged();
+  return result;
+}
+
 /** Staff and audit endpoints over the shared client (CSRF and refresh included). */
 export function staffApi(client: ApiClient) {
+  const list = (query: StaffQuery, signal?: AbortSignal) =>
+    client.request(
+      `/staff${queryString({ q: query.q?.trim(), status: query.status, role: query.role, limit: query.limit, offset: query.offset })}`,
+      { signal },
+      pageParser(parseStaffMember),
+    );
+
   return {
-    list: (query: StaffQuery) =>
-      client.request(
-        `/staff${queryString({ q: query.q?.trim(), status: query.status, role: query.role, limit: query.limit, offset: query.offset })}`,
-        {},
-        pageParser(parseStaffMember),
-      ),
-    get: (id: string) => client.request(staffPath(id), {}, parseStaffMember),
+    list,
+    /** How many staff match the filters: the page total, fetching a single row. */
+    count: async (filters: Pick<StaffQuery, "status" | "role">, signal?: AbortSignal) =>
+      (await list({ status: filters.status, role: filters.role, limit: 1 }, signal)).total,
+    get: (id: string, signal?: AbortSignal) => client.request(staffPath(id), { signal }, parseStaffMember),
     create: (input: { email: string; fullName: string; password: string; roles: string[] }) =>
-      client.request(
-        "/staff",
-        {
-          method: "POST",
-          json: {
-            email: input.email,
-            full_name: input.fullName,
-            password: input.password,
-            roles: input.roles,
+      changed(
+        client.request(
+          "/staff",
+          {
+            method: "POST",
+            json: {
+              email: input.email,
+              full_name: input.fullName,
+              password: input.password,
+              roles: input.roles,
+            },
           },
-        },
-        parseStaffMember,
+          parseStaffMember,
+        ),
       ),
     updateProfile: (id: string, input: { email?: string; fullName?: string }) =>
-      client.request(
-        staffPath(id),
-        {
-          method: "PATCH",
-          json: {
-            ...(input.email !== undefined && { email: input.email }),
-            ...(input.fullName !== undefined && { full_name: input.fullName }),
+      changed(
+        client.request(
+          staffPath(id),
+          {
+            method: "PATCH",
+            json: {
+              ...(input.email !== undefined && { email: input.email }),
+              ...(input.fullName !== undefined && { full_name: input.fullName }),
+            },
           },
-        },
-        parseStaffMember,
+          parseStaffMember,
+        ),
       ),
     replaceRoles: (id: string, roles: string[]) =>
-      client.request(`${staffPath(id)}/roles`, { method: "PUT", json: { roles } }, parseStaffMember),
+      changed(
+        client.request(`${staffPath(id)}/roles`, { method: "PUT", json: { roles } }, parseStaffMember),
+      ),
     disable: (id: string) =>
-      client.request(`${staffPath(id)}/disable`, { method: "POST" }, parseStaffMember),
+      changed(client.request(`${staffPath(id)}/disable`, { method: "POST" }, parseStaffMember)),
     reactivate: (id: string) =>
-      client.request(`${staffPath(id)}/reactivate`, { method: "POST" }, parseStaffMember),
+      changed(client.request(`${staffPath(id)}/reactivate`, { method: "POST" }, parseStaffMember)),
     revokeSessions: (id: string) =>
-      client.request(`${staffPath(id)}/revoke-sessions`, { method: "POST" }),
-    auditEvents: (query: AuditQuery) =>
+      changed(client.request(`${staffPath(id)}/revoke-sessions`, { method: "POST" })),
+    auditEvents: (query: AuditQuery, signal?: AbortSignal) =>
       client.request(
         `/audit-events${queryString({
           event_code: query.eventCode?.trim(),
@@ -172,7 +200,7 @@ export function staffApi(client: ApiClient) {
           limit: query.limit,
           offset: query.offset,
         })}`,
-        {},
+        { signal },
         pageParser(parseAuditEvent),
       ),
   };

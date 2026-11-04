@@ -5,26 +5,11 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Pagination } from "@/components/pagination";
 import { Forbidden, LoadError, Loading } from "@/components/status-panels";
 import { staffApi, type AuditQuery } from "@/lib/api/staff";
+import { AUDIT_EVENT_CODES } from "@/lib/audit-events";
 import { useSession } from "@/lib/session";
 import { useRemote } from "@/lib/use-remote";
 
 const PAGE_SIZE = 25;
-const EVENT_CODES = [
-  "auth.login_succeeded",
-  "auth.login_failed",
-  "auth.rate_limited",
-  "auth.refresh_token_reused",
-  "auth.logout",
-  "auth.password_changed",
-  "auth.permission_denied",
-  "staff.bootstrap_admin_created",
-  "staff.created",
-  "staff.profile_updated",
-  "staff.roles_changed",
-  "staff.disabled",
-  "staff.reactivated",
-  "staff.sessions_revoked",
-];
 
 type Draft = { eventCode: string; actorId: string; entityId: string; from: string; to: string };
 const EMPTY: Draft = { eventCode: "", actorId: "", entityId: "", from: "", to: "" };
@@ -75,7 +60,7 @@ export default function AuditPage() {
           <label htmlFor="audit-code">Event</label>
           <select id="audit-code" {...field("eventCode")}>
             <option value="">Any event</option>
-            {EVENT_CODES.map((code) => (
+            {AUDIT_EVENT_CODES.map((code) => (
               <option key={code} value={code}>
                 {code}
               </option>

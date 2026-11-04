@@ -19,6 +19,8 @@
   --color-brand-strong: #004d40;
   --color-brand-deep: #006238; /* sign-in submit, as in the dusk reference; 7.5:1 with white */
   --color-brand-subtle: #ddf7e8;
+  --color-forest-deep: #00382f; /* workspace sidebar hover, a step below brand-strong */
+  --color-canvas: #f5f7f8; /* workspace background behind cards and tables */
   --color-accent: #f5d991;
   --color-surface: #ffffff;
   --color-surface-tint: #edf6ff;

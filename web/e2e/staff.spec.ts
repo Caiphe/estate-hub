@@ -1,38 +1,16 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-import { E2E_PASSWORD, E2E_USERS, signIn, signInFromLoginPage } from "./support";
+import {
+  E2E_USERS,
+  MEMBER_PASSWORD,
+  greeting,
+  adminToken,
+  createStaff,
+  signInAs,
+  signInFromLoginPage,
+} from "./support";
 
 const runId = Date.now().toString(36);
-const MEMBER_PASSWORD = "member passphrase for e2e";
-
-async function adminToken(request: APIRequestContext, email: string): Promise<string> {
-  const response = await request.post("/api/v1/auth/token", {
-    form: { username: email, password: E2E_PASSWORD },
-  });
-  expect(response.status()).toBe(200);
-  return ((await response.json()) as { access_token: string }).access_token;
-}
-
-/** Create a staff member through the API as an administrator (bearer, so no CSRF). */
-async function createStaff(
-  request: APIRequestContext,
-  token: string,
-  role: string,
-): Promise<{ id: string; email: string }> {
-  const email = `e2e.${role}.${runId}@estatehub.example`;
-  const response = await request.post("/api/v1/staff", {
-    headers: { Authorization: `Bearer ${token}` },
-    data: { email, full_name: `E2E ${role}`, password: MEMBER_PASSWORD, roles: [role] },
-  });
-  expect(response.status(), await response.text()).toBe(201);
-  return { id: ((await response.json()) as { id: string }).id, email };
-}
-
-async function signInAs(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/login");
-  await signIn(page, email, password);
-  await expect(page).toHaveURL(/\/dashboard$/);
-}
 
 test.describe("administrator staff management", () => {
   test.describe.configure({ mode: "serial" });
@@ -53,7 +31,7 @@ test.describe("administrator staff management", () => {
     await expect(page).toHaveURL(/\/staff\/new$/);
     // The submit button is enabled once the form is interactive.
     await expect(page.getByRole("button", { name: "Create staff member" })).toBeEnabled();
-    await page.getByLabel("Email").fill(memberEmail);
+    await page.getByLabel("Email", { exact: true }).fill(memberEmail);
     await page.getByLabel("Full name").fill("E2E Member");
     await page.getByLabel("Initial password").fill(MEMBER_PASSWORD);
     await page.getByRole("checkbox", { name: "Agent" }).check();
@@ -76,7 +54,7 @@ test.describe("administrator staff management", () => {
     const memberContext = await browser.newContext();
     const memberPage = await memberContext.newPage();
     await signInAs(memberPage, memberEmail, MEMBER_PASSWORD);
-    await expect(memberPage.getByRole("heading", { name: "Welcome, E2E Member" })).toBeVisible();
+    await expect(memberPage.getByRole("heading", { name: greeting("E2E Member") })).toBeVisible();
     const memberNav = memberPage.getByRole("navigation", { name: "Workspace" });
     await expect(memberNav.getByRole("link", { name: "Staff" })).toBeVisible();
     await expect(memberNav.getByRole("link", { name: "Audit log" })).toHaveCount(0);
@@ -92,7 +70,7 @@ test.describe("administrator staff management", () => {
 
     await memberPage.reload();
     await expect(memberPage).toHaveURL(/\/login/);
-    await expect(memberPage.getByText("Welcome, E2E Member")).toHaveCount(0);
+    await expect(memberPage.getByRole("heading", { name: greeting("E2E Member") })).toHaveCount(0);
     await memberContext.close();
   });
 
@@ -144,14 +122,14 @@ test("duplicate emails are reported on the email field", async ({ page }) => {
   await signInFromLoginPage(page, E2E_USERS.staffAdmin);
   await page.goto("/staff/new");
   await expect(page.getByRole("button", { name: "Create staff member" })).toBeEnabled();
-  await page.getByLabel("Email").fill(E2E_USERS.selfAdmin.toUpperCase());
+  await page.getByLabel("Email", { exact: true }).fill(E2E_USERS.selfAdmin.toUpperCase());
   await page.getByLabel("Full name").fill("Duplicate");
   await page.getByLabel("Initial password").fill("duplicate passphrase");
   await page.getByRole("checkbox", { name: "Agent" }).check();
   await page.getByRole("button", { name: "Create staff member" }).click();
 
   await expect(page.getByText("A staff member with this email already exists.")).toBeVisible();
-  await expect(page.getByLabel("Email")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByLabel("Email", { exact: true })).toHaveAttribute("aria-invalid", "true");
   await expect(page.getByLabel("Initial password")).toHaveValue("");
 });
 
@@ -164,6 +142,11 @@ test.describe("roles without staff administration", () => {
     await signInAs(page, manager.email, MEMBER_PASSWORD);
     const nav = page.getByRole("navigation", { name: "Workspace" });
     await expect(nav.getByRole("link", { name: "Audit log" })).toHaveCount(0);
+    // staff:read brings the top-bar staff search and the staff panels, but not the audit feed.
+    await expect(page.getByRole("search", { name: "Staff" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Role assignments" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Recent staff activity" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Manager, account menu$/ })).toBeVisible();
     await nav.getByRole("link", { name: "Staff" }).click();
     await expect(page.getByRole("heading", { name: "Staff", level: 1 })).toBeVisible();
     await expect(page.getByRole("link", { name: "Add staff member" })).toHaveCount(0);
@@ -186,9 +169,18 @@ test.describe("roles without staff administration", () => {
       const user = await createStaff(request, token, role);
 
       await signInAs(page, user.email, MEMBER_PASSWORD);
+      // No staff summaries, so the dashboard explains their own access instead.
+      await expect(page.getByRole("heading", { name: greeting(`E2E ${role}`) })).toBeVisible();
+      const account = page.getByRole("region", { name: "Your account" });
+      await expect(account).toContainText(user.email);
+      await expect(account).toContainText(role === "agent" ? "Agent" : "Accountant");
+      for (const region of ["Staff summary", "Role assignments", "Recent staff activity"]) {
+        await expect(page.getByRole("region", { name: region })).toHaveCount(0);
+      }
       const nav = page.getByRole("navigation", { name: "Workspace" });
       await expect(nav.getByRole("link", { name: "Staff" })).toHaveCount(0);
       await expect(nav.getByRole("link", { name: "Audit log" })).toHaveCount(0);
+      await expect(page.getByRole("search", { name: "Staff" })).toHaveCount(0);
 
       for (const path of ["/staff", `/staff/${user.id}`, "/staff/new", "/audit"]) {
         await page.goto(path);

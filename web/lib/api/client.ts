@@ -20,6 +20,8 @@ export type RequestOptions = {
   json?: unknown;
   /** Sent as application/x-www-form-urlencoded. */
   form?: Record<string, string>;
+  /** Cancels the request. An abort rejects with the signal's reason, not NetworkError. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -182,8 +184,10 @@ export class ApiClient {
         body,
         credentials: "include",
         cache: "no-store",
+        signal: options.signal,
       });
-    } catch {
+    } catch (error) {
+      if (options.signal?.aborted) throw options.signal.reason ?? error;
       throw new NetworkError();
     }
   }

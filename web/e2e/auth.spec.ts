@@ -1,12 +1,12 @@
 import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test";
 
-import { E2E_NAME, E2E_USERS, signIn, signInFromLoginPage } from "./support";
+import { ANY_GREETING, E2E_NAME, E2E_USERS, greeting, signIn, signInFromLoginPage } from "./support";
 
 test("successful sign-in reaches the dashboard", async ({ page }) => {
   await signInFromLoginPage(page, E2E_USERS.login);
 
-  await expect(page.getByRole("heading", { name: `Welcome, ${E2E_NAME}` })).toBeVisible();
-  await expect(page.getByText(E2E_USERS.login)).toBeVisible();
+  await expect(page.getByRole("heading", { name: greeting(E2E_NAME) })).toBeVisible();
+  await expect(page.getByRole("button", { name: `${E2E_NAME}, Administrator, account menu` })).toBeVisible();
   const navigation = page.getByRole("navigation", { name: "Workspace" });
   await expect(navigation.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
     "aria-current",
@@ -80,6 +80,7 @@ test("sign-out returns to login and back does not reveal the workspace", async (
   await page.getByRole("link", { name: "Change password" }).click();
   await expect(page).toHaveURL(/\/account\/password$/);
 
+  await page.getByRole("button", { name: /account menu$/ }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
 
@@ -87,12 +88,12 @@ test("sign-out returns to login and back does not reveal the workspace", async (
   await expect(page).toHaveURL(/\/login\?next=%2Fdashboard$/);
   await expect(page.getByText(E2E_USERS.logout)).toHaveCount(0);
   // The dashboard greeting, not the login page's own "Welcome back".
-  await expect(page.getByRole("heading", { name: /^Welcome, / })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: ANY_GREETING })).toHaveCount(0);
 });
 
 test("an expired access token is refreshed transparently", async ({ page, context }) => {
   await signInFromLoginPage(page, E2E_USERS.refresh);
-  await expect(page.getByRole("heading", { name: `Welcome, ${E2E_NAME}` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: greeting(E2E_NAME) })).toBeVisible();
   // Let in-flight requests finish first. Reloading mid-refresh would discard a rotated
   // cookie, and the API rightly refuses the stale token that remains.
   await page.waitForLoadState("networkidle");
@@ -104,7 +105,7 @@ test("an expired access token is refreshed transparently", async ({ page, contex
   await context.clearCookies({ name: "estatehub_access" });
   await page.reload();
 
-  await expect(page.getByRole("heading", { name: `Welcome, ${E2E_NAME}` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: greeting(E2E_NAME) })).toBeVisible();
   const after = await context.cookies();
   expect(after.find((cookie) => cookie.name === "estatehub_access")).toBeTruthy();
   expect(after.find((cookie) => cookie.name === "estatehub_refresh")?.value).not.toBe(oldRefresh);
@@ -400,7 +401,7 @@ test.describe("session loss and redirect safety (stubbed API)", () => {
     // cleared the cookies, so no logout call races another tab.
     expect(seen.calls.filter((call) => call === "POST /auth/refresh")).toHaveLength(1);
     expect(seen.calls).not.toContain("POST /auth/logout");
-    await expect(page.getByRole("heading", { name: /^Welcome, / })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: ANY_GREETING })).toHaveCount(0);
   });
 
   test("a token still refused after refresh signs out, then returns to login once", async ({

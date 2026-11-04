@@ -24,7 +24,7 @@ export function BrandMark({
   size?: keyof typeof SIZES;
 }) {
   return (
-    <Link href="/" className={`inline-flex min-h-11 items-center ${SIZES[size].link} ${TONES[tone].link}`}>
+    <Link href="/" className={`inline-flex min-h-11 items-center no-underline ${SIZES[size].link} ${TONES[tone].link}`}>
       <svg
         className={`${TONES[tone].mark} ${SIZES[size].mark}`.trim()}
         viewBox="0 0 32 32"
