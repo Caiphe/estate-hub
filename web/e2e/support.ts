@@ -17,9 +17,10 @@ export const E2E_USERS = {
 export const E2E_NAME = "E2E Admin";
 
 export async function signIn(page: Page, email: string, password = E2E_PASSWORD): Promise<void> {
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByLabel("Email address").fill(email);
+  // Exact: the visibility toggle's name, "Show password", also contains the word.
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Log in" }).click();
 }
 
 export async function signInFromLoginPage(page: Page, email: string): Promise<void> {

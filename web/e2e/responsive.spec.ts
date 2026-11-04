@@ -206,3 +206,104 @@ test.describe("section recomposition", () => {
     await expect(footer.getByRole("form", { name: "Newsletter sign-up" }).getByLabel("Email address")).toBeVisible();
   });
 });
+
+test.describe("login page recomposition", () => {
+  // Wide desktop splits 55/45 like the reference; tablets and compact desktops give the form
+  // 55%; phones stack a short image band above the form.
+  const LAYOUTS = [
+    { width: 1536, height: 1024, split: 55, copy: true, points: true },
+    { width: 1280, height: 800, split: 55, copy: true, points: true },
+    { width: 1024, height: 768, split: 45, copy: true, points: false },
+    { width: 768, height: 1024, split: 45, copy: false, points: false },
+    { width: 390, height: 844, split: 0, copy: false, points: false },
+    { width: 320, height: 640, split: 0, copy: false, points: false },
+  ];
+
+  for (const { width, height, split, copy, points } of LAYOUTS) {
+    test(`${width}×${height}: ${split ? `${split}/${100 - split} split` : "stacked"}, no sideways scroll`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height });
+      await page.goto("/login");
+      await expect(page.getByRole("button", { name: "Log in" })).toBeEnabled();
+
+      const layout = await page.evaluate(() => {
+        const viewport = document.documentElement.clientWidth;
+        const panel = document.querySelector("main > section")!.getBoundingClientRect();
+        return {
+          overflow: document.documentElement.scrollWidth - viewport,
+          panelStart: Math.round((panel.left / viewport) * 100),
+        };
+      });
+      expect(layout).toEqual({ overflow: 0, panelStart: split });
+
+      const statement = page.getByRole("complementary").getByText("Buy, rent, invest");
+      await expect(statement).toBeVisible({ visible: copy });
+      await expect(page.getByRole("complementary").getByRole("list")).toBeVisible({ visible: points });
+
+      // The heading and both fields are on the first screen; nothing hides the guidance.
+      await expect(page.getByRole("heading", { name: "Welcome back" })).toBeInViewport();
+      await expect(page.getByLabel("Password", { exact: true })).toBeInViewport();
+      await expect(page.getByText("Need access? Contact your administrator.")).toBeVisible();
+
+      await testInfo.attach(`login-${width}x${height}`, {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
+    });
+  }
+
+  test("short landscape scrolls the page and keeps every control reachable", async ({ page }) => {
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.goto("/login");
+    const submit = page.getByRole("button", { name: "Log in" });
+    await expect(submit).toBeEnabled();
+
+    expect(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight)).toBe(true);
+    await submit.scrollIntoViewIfNeeded();
+    await expect(submit).toBeInViewport();
+    await expect(page.getByText("Need access? Contact your administrator.")).toBeVisible();
+  });
+
+  test("200% zoom reflows without sideways scroll and the form stays usable", async ({ browser }) => {
+    // 1536×1024 at 200% is a 768×512 CSS viewport at 2× density.
+    const context = await browser.newContext({ viewport: { width: 768, height: 512 }, deviceScaleFactor: 2 });
+    const page = await context.newPage();
+    await page.goto("/login");
+    const submit = page.getByRole("button", { name: "Log in" });
+    await expect(submit).toBeEnabled();
+
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+    await page.getByLabel("Email address").fill("someone@estatehub.example");
+    await submit.click();
+    // The field error appears beside its input, unclipped, and the button stays reachable.
+    await expect(page.getByText("Enter your password.")).toBeVisible();
+    await submit.scrollIntoViewIfNeeded();
+    await expect(submit).toBeInViewport();
+    await context.close();
+  });
+});
+
+test.describe("login page screenshots", () => {
+  for (const [name, viewport] of [
+    ["desktop", { width: 1536, height: 1024 }],
+    ["tablet", { width: 768, height: 1024 }],
+    ["mobile", { width: 390, height: 844 }],
+  ] as const) {
+    test(`${name} matches its baseline`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.goto("/login");
+      await expect(page.getByRole("button", { name: "Log in" })).toBeEnabled();
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await Promise.all([...document.images].map((image) => image.decode()));
+      });
+      // Baselines are per platform (Playwright suffixes them, e.g. -chromium-darwin).
+      await expect(page).toHaveScreenshot(`login-${name}.png`, {
+        fullPage: true,
+        animations: "disabled",
+        maxDiffPixelRatio: 0.01,
+      });
+    });
+  }
+});

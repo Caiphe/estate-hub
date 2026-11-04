@@ -118,8 +118,10 @@ test.describe("structure", () => {
 });
 
 /** Tabs through the whole page, recording each stop and whether its focus is visible. */
+const WHITE = "rgb(255, 255, 255)";
+
 async function tabThrough(page: Page) {
-  const stops: { name: string; visible: boolean; unobscured: boolean }[] = [];
+  const stops: { name: string; visible: boolean; unobscured: boolean; ring: string }[] = [];
   await page.locator("body").focus();
   for (let step = 0; step < 80; step += 1) {
     await page.keyboard.press("Tab");
@@ -140,6 +142,8 @@ async function tabThrough(page: Page) {
         name: (element.getAttribute("aria-label") ?? element.textContent ?? "").trim().slice(0, 40) || element.tagName,
         visible: style.outlineStyle !== "none" && parseFloat(style.outlineWidth) >= 2,
         unobscured: !!hit && (element.contains(hit) || hit.contains(element) || ringHost.contains(hit)),
+        // Read the instant focus lands: a ring that fades in shows its starting colour here.
+        ring: style.outlineColor,
       };
     });
     if (!stop || stops.some((seen) => seen.name === stop.name && stops.length > 3 && stop.name === stops[0].name)) break;
@@ -159,6 +163,7 @@ test.describe("keyboard", () => {
     expect(stops.length).toBeGreaterThan(30);
     expect(stops.filter((stop) => !stop.visible).map((stop) => stop.name)).toEqual([]);
     expect(stops.filter((stop) => !stop.unobscured).map((stop) => stop.name)).toEqual([]);
+    expect(stops.filter((stop) => stop.ring === WHITE).map((stop) => stop.name)).toEqual([]);
     expect(stops.map((stop) => stop.name)).toEqual(
       expect.arrayContaining(["Skip to main content", "Start investing", "Subscribe", "Favorite Modern Duplex in Lekki"]),
     );
@@ -235,6 +240,132 @@ test.describe("user preferences", () => {
             return style.overflow === "hidden" && self.scrollWidth > self.clientWidth + 1;
           })
           .map((element) => element.textContent?.trim().slice(0, 30));
+        return { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, clipped };
+      });
+      expect(problems, `at ${width}px`).toEqual({ overflow: 0, clipped: [] });
+    }
+  });
+});
+
+test.describe("login page", () => {
+  const BRAND = "rgb(7, 131, 63)";
+  const SUNSET = "rgb(243, 197, 117)";
+
+  async function openLogin(page: Page, width: number, height = 900, path = "/login") {
+    await page.setViewportSize({ width, height });
+    await page.goto(path);
+    await expect(page.getByRole("button", { name: "Log in" })).toBeEnabled(); // hydrated
+  }
+
+  async function submitWith(page: Page, status: number) {
+    await page.route("**/auth/token", (route) => route.fulfill({ status, body: "{}" }));
+    await page.getByLabel("Email address").fill("someone@estatehub.example");
+    await page.getByLabel("Password", { exact: true }).fill("a passphrase");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("form").getByRole("alert")).toBeVisible();
+  }
+
+  for (const width of [1536, 1024, 768, 390, 320]) {
+    test(`axe: no violations at ${width}px`, async ({ page }) => {
+      await openLogin(page, width);
+      await expectNoViolations(page);
+    });
+  }
+
+  const STATES: [string, (page: Page) => Promise<void>, string?][] = [
+    ["field errors", (page) => page.getByRole("button", { name: "Log in" }).click()],
+    [
+      "account help open, password shown",
+      async (page) => {
+        await page.getByRole("button", { name: "Forgot your password?" }).click();
+        await page.getByRole("button", { name: "Show password" }).click();
+      },
+    ],
+    ["server error", (page) => submitWith(page, 401)],
+    ["password-changed notice", async () => {}, "/login?changed=1"],
+  ];
+  for (const [name, act, path] of STATES) {
+    test(`axe: no violations with ${name}`, async ({ page }) => {
+      await openLogin(page, 1536, 1024, path);
+      await act(page);
+      await expectNoViolations(page);
+    });
+  }
+
+  test("one h1, labelled landmarks, and a silent photograph", async ({ page }) => {
+    await openLogin(page, 1536);
+    const headings = await page.locator("h1, h2, h3, h4, h5, h6").allTextContents();
+    expect(headings).toEqual(["Welcome back"]);
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.getByRole("complementary", { name: "Your gateway to smarter real estate" })).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "Welcome back" })).toHaveCount(1);
+    await expect(page.locator("img")).toHaveAttribute("alt", "");
+  });
+
+  // tabThrough names elements by aria-label or text, so the two unlabelled inputs read "INPUT".
+  for (const [width, expected] of [
+    [1536, ["EstateHub home", "EstateHub home", "INPUT", "INPUT", "Show password", "Forgot your password?", "Log in"]],
+    [390, ["EstateHub home", "INPUT", "INPUT", "Show password", "Forgot your password?", "Log in"]],
+  ] as const) {
+    test(`keyboard at ${width}px: visual order, visible rings that contrast with their panel`, async ({ page }) => {
+      await openLogin(page, width);
+      const stops = await tabThrough(page);
+
+      expect(stops.map((stop) => stop.name)).toEqual(expected);
+      expect(stops.filter((stop) => !stop.visible || !stop.unobscured)).toEqual([]);
+      // Gold on the dusk panel's brand link, green everywhere on the white panel.
+      expect(stops.map((stop) => stop.ring)).toEqual(expected.map((_, index) => (index === 0 ? SUNSET : BRAND)));
+    });
+  }
+
+  test("forced colors: the button and message panels keep visible edges", async ({ page }) => {
+    await page.emulateMedia({ forcedColors: "active" });
+    await openLogin(page, 1536, 1024, "/login?changed=1");
+    await page.getByRole("button", { name: "Forgot your password?" }).click();
+    for (const element of [
+      page.getByRole("button", { name: "Log in" }),
+      page.getByRole("status").filter({ hasText: "Your password was changed." }),
+      page.getByText(/Contact your EstateHub administrator/),
+    ]) {
+      await expect(element).toHaveCSS("border-top-style", "solid");
+      await expect(element).toHaveCSS("border-top-width", "1px");
+    }
+  });
+
+  test("reduced motion: no transitions and no animations", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openLogin(page, 1536);
+    const moving = await page.locator("main *").evaluateAll((elements) =>
+      elements.filter((element) =>
+        getComputedStyle(element).transitionDuration.split(",").some((part) => parseFloat(part) > 0),
+      ).length,
+    );
+    expect(moving).toBe(0);
+    expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+  });
+
+  test("WCAG text-spacing overrides do not clip text, errors, or guidance", async ({ page }) => {
+    for (const width of [1536, 1024, 320]) {
+      await openLogin(page, width);
+      await page.getByRole("button", { name: "Forgot your password?" }).click();
+      await page.addStyleTag({
+        content: `* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; }
+                  p { margin-bottom: 2em !important; }`,
+      });
+      await submitWith(page, 429);
+      const problems = await page.evaluate(() => {
+        const clipped = [...document.querySelectorAll("main *")]
+          .filter((element) => element.checkVisibility() && !element.closest(".sr-only"))
+          .filter((element) => {
+            const self = element as HTMLElement;
+            // A long value scrolls sideways inside its input by design; only a taller line
+            // that the input cuts off would hide text.
+            if (self.tagName === "INPUT") return self.scrollHeight > self.clientHeight + 1;
+            const hides = getComputedStyle(self).overflow !== "visible";
+            return hides && (self.scrollWidth > self.clientWidth + 1 || self.scrollHeight > self.clientHeight + 1);
+          })
+          .filter((element) => element.tagName === "INPUT" || element.textContent?.trim())
+          .map((element) => (element as HTMLElement).id || element.textContent?.trim().slice(0, 30));
         return { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, clipped };
       });
       expect(problems, `at ${width}px`).toEqual({ overflow: 0, clipped: [] });

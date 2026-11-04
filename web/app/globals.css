@@ -17,16 +17,24 @@
   --color-fg-inverse: #ffffff;
   --color-brand: #07833f;
   --color-brand-strong: #004d40;
+  --color-brand-deep: #006238; /* sign-in submit, as in the dusk reference; 7.5:1 with white */
   --color-brand-subtle: #ddf7e8;
   --color-accent: #f5d991;
   --color-surface: #ffffff;
   --color-surface-tint: #edf6ff;
   --color-line: #e3e9ef;
+  --color-line-strong: #848e9c; /* input boundaries; 3.3:1 on white */
   --color-danger: #b42318; /* errors and invalid fields; 6.5:1 on white */
+  --color-danger-subtle: #fdeceb; /* error panels; danger text is 5.7:1 on it */
+  /* Sign-in marketing panel: image overlay and its gold emphasis (rule, headline, icon tiles). */
+  --color-dusk: #102b55;
+  --color-sunset: #f3c575; /* 8.7:1 on dusk */
 
-  /* One family. next/font's --font-manrope already carries the metric-matched fallback. */
+  /* next/font's variables already carry the metric-matched fallbacks. The serif is only
+     loaded on the sign-in page, for its marketing headline. */
   --font-*: initial;
   --font-sans: var(--font-manrope, Arial, Helvetica, sans-serif);
+  --font-serif: var(--font-source-serif, Georgia, "Times New Roman", serif);
 
   --text-*: initial;
   --text-xs: 0.75rem;
@@ -36,6 +44,7 @@
   --text-xl: 1.375rem;
   --text-2xl: clamp(1.75rem, 1.4rem + 1.2vw, 2.25rem);
   --text-display: clamp(2.25rem, 1rem + 3vw, 3.25rem);
+  --text-editorial: clamp(2.25rem, 1rem + 2.75vw, 3.5rem); /* serif sign-in statement */
 
   --leading-*: initial;
   --leading-tight: 1.1;
@@ -50,6 +59,7 @@
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1.25rem;
+  --radius-panel: 1.75rem; /* the sign-in panel's leading corners, over the image */
 
   /* Elevation: only floating panels and cards. */
   --shadow-*: initial;
@@ -62,6 +72,7 @@
   --container-hero-copy: 30rem;
   --container-headline: 11.5em;
   --container-measure: 26em;
+  --container-form: 33.5rem; /* sign-in form column, 536px */
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
@@ -78,8 +89,33 @@
   margin-inline: auto;
 }
 
+/* At least one full screen, measured with mobile browser chrome showing (svh) so nothing sits
+   under it; plain vh first for browsers without the unit. Content taller than this scrolls. */
+@utility min-h-viewport {
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+/* Sign-in dusk panel: navy concentrated behind the top-left copy and clear by the lit house,
+   bottom right. Measured worst case over the photograph from 1024 to 1536px wide: white copy
+   6.4:1 or better, sunset gold 6:1 or better. */
+@utility bg-dusk-scrim {
+  background: radial-gradient(
+    150% 90% at 0% 25%,
+    --alpha(var(--color-dusk) / 95%) 0%,
+    --alpha(var(--color-dusk) / 85%) 50%,
+    transparent 100%
+  );
+}
+
 @layer base {
-  /* The workspace keeps its amber focus ring; the public site uses the brand green. */
+  /* The workspace keeps its amber focus ring; the public site uses the brand green. The colour
+     is set at rest too: left as currentColor, any element with a colour transition would fade
+     its ring in from its text colour, such as white on a white panel behind a green button. */
+  .site * {
+    outline-color: var(--color-brand);
+  }
+
   .site :focus-visible {
     outline: 3px solid var(--color-brand);
     outline-offset: 2px;

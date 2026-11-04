@@ -30,7 +30,21 @@ about 3 MB.
 | Victoria Commercial Plaza | `placeholders/property-card.svg` | **Missing**: needs a photograph. |
 | Investment banner | `header-banner-1.png` (1672 × 941) | Final. The villa that was the original hero; decorative (`alt=""`). |
 
-`auth-banner.png` belongs to the sign-in page. `logo.png` is a raster with a white
+## Sign-in page
+
+| Slot | File | Status |
+| --- | --- | --- |
+| Dusk marketing panel | `auth-banner.png` (1312 × 1199) | **Usable, under-sized.** Standalone photo of the reference villa at dusk; no baked-in text or controls. |
+
+Requirements: the panel is full-height and portrait at desktop (≈842 × 1024 at 1536 × 1024, so
+≈0.82:1), and a short landscape band on mobile. Use a landscape source of at least
+**2400 × 2048** so a 2× display gets a sharp full-height crop; the current file is upscaled
+≈1.7× there. Keep the house right of centre and in the lower half (crop anchored around
+70% horizontally), with open dark sky top-left behind the headline and value points. The image
+is decorative (`alt=""`): the panel's copy carries the meaning. Never substitute a crop of
+`layout/Estate Hub Login at Dusk.png`; it contains baked-in UI.
+
+`logo.png` is a raster with a white
 background and a gold accent outside the landing palette; Prompt 02 decides between it and
 a repo-native SVG mark.
 
@@ -38,3 +52,7 @@ a repo-native SVG mark.
 
 `../fonts/manrope-latin-wght.woff2` is Manrope 5.3.0 (Latin subset, variable weight), from
 `@fontsource-variable/manrope`, licensed under the SIL Open Font License (`../fonts/Manrope-OFL.txt`).
+
+`../fonts/source-serif-4-latin-wght.woff2` is Source Serif 4 (Latin subset, variable weight),
+from `@fontsource-variable/source-serif-4` 5.3.1, licensed under the SIL Open Font License
+(`../fonts/SourceSerif4-OFL.txt`). It is used only for the sign-in marketing headline.

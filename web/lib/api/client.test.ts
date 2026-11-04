@@ -269,4 +269,12 @@ describe("ApiClient refresh", () => {
     await expect(api.client.me()).rejects.toMatchObject({ status: 403 });
     expect(api.calls).toHaveLength(1);
   });
+
+  it("never refreshes after a failed login, even with a refreshable code", async () => {
+    const api = fakeApi({ "POST /auth/token": [apiError(401, "authentication_required")] });
+
+    await expect(api.client.login("ada@estatehub.example", "wrong")).rejects.toMatchObject({ status: 401 });
+    expect(api.calls.map((call) => call.url)).toEqual(["/api/v1/auth/token"]);
+    expect(api.onSessionLost).not.toHaveBeenCalled();
+  });
 });
