@@ -22,14 +22,26 @@ class Permission(StrEnum):
     STAFF_REVOKE_SESSIONS = "staff:revoke_sessions"
     # Authentication and security audit events
     AUDIT_READ = "audit:read"
-    # Future domain areas: stable names now, enforced by later prompts.
+    # Property catalog (prompt 02). `app/catalog/contracts.py` maps each to its routes.
     PROPERTIES_READ = "properties:read"
-    PROPERTIES_MANAGE = "properties:manage"
+    PROPERTIES_CREATE = "properties:create"
+    PROPERTIES_UPDATE = "properties:update"
+    PROPERTIES_ARCHIVE = "properties:archive"
+    # Field-level: internal notes on properties and units. No route requires it alone.
+    PROPERTIES_READ_INTERNAL = "properties:read_internal"
+    PROPERTY_UNITS_MANAGE = "property_units:manage"
+    PROPERTY_MEDIA_MANAGE = "property_media:manage"
+    PROPERTY_DOCUMENTS_READ = "property_documents:read"
+    PROPERTY_DOCUMENTS_MANAGE = "property_documents:manage"
+    PROPERTY_OWNERSHIP_READ = "property_ownership:read"
+    PROPERTY_OWNERSHIP_MANAGE = "property_ownership:manage"
+    CONTACTS_READ = "contacts:read"
+    CONTACTS_MANAGE = "contacts:manage"
+    REFERENCE_DATA_MANAGE = "reference_data:manage"
+    # Future domain areas: stable names now, enforced by later prompts.
     LISTINGS_READ = "listings:read"
     LISTINGS_MANAGE = "listings:manage"
     LISTINGS_PUBLISH = "listings:publish"
-    CONTACTS_READ = "contacts:read"
-    CONTACTS_MANAGE = "contacts:manage"
     DEALS_READ = "deals:read"
     DEALS_MANAGE = "deals:manage"
     RENTALS_READ = "rentals:read"
@@ -51,12 +63,22 @@ ROLE_PERMISSIONS: Mapping[RoleCode, frozenset[Permission]] = MappingProxyType(
     {
         RoleCode.ADMINISTRATOR: frozenset(Permission),
         # Operational management. Can see staff (to assign work) but not administer
-        # accounts, roles, or sessions.
+        # accounts, roles, or sessions. Reference data stays with administrators, as the
+        # design specification assigns it.
         RoleCode.MANAGER: frozenset(
             {
                 P.STAFF_READ,
                 P.PROPERTIES_READ,
-                P.PROPERTIES_MANAGE,
+                P.PROPERTIES_CREATE,
+                P.PROPERTIES_UPDATE,
+                P.PROPERTIES_ARCHIVE,
+                P.PROPERTIES_READ_INTERNAL,
+                P.PROPERTY_UNITS_MANAGE,
+                P.PROPERTY_MEDIA_MANAGE,
+                P.PROPERTY_DOCUMENTS_READ,
+                P.PROPERTY_DOCUMENTS_MANAGE,
+                P.PROPERTY_OWNERSHIP_READ,
+                P.PROPERTY_OWNERSHIP_MANAGE,
                 P.LISTINGS_READ,
                 P.LISTINGS_MANAGE,
                 P.LISTINGS_PUBLISH,
@@ -75,10 +97,14 @@ ROLE_PERMISSIONS: Mapping[RoleCode, frozenset[Permission]] = MappingProxyType(
             }
         ),
         # Sales work. Restricting agents to *assigned* records is row-level scoping that
-        # the domain prompts add on top of these permissions.
+        # the domain prompts add on top of these permissions. Agents read the catalog,
+        # including internal notes and who owns a property (sellers are their contacts),
+        # but do not change property records, units, media, or private documents.
         RoleCode.AGENT: frozenset(
             {
                 P.PROPERTIES_READ,
+                P.PROPERTIES_READ_INTERNAL,
+                P.PROPERTY_OWNERSHIP_READ,
                 P.LISTINGS_READ,
                 P.LISTINGS_MANAGE,
                 P.CONTACTS_READ,
@@ -87,7 +113,8 @@ ROLE_PERMISSIONS: Mapping[RoleCode, frozenset[Permission]] = MappingProxyType(
                 P.DEALS_MANAGE,
             }
         ),
-        # Financial work with read-only property and rental context.
+        # Financial work with read-only property and rental context. No private property
+        # documents: the specification names none the role requires.
         RoleCode.ACCOUNTANT: frozenset(
             {
                 P.PROPERTIES_READ,

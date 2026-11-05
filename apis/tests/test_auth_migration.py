@@ -1,124 +1,47 @@
 """Runs the authentication migration against a temporary PostgreSQL database."""
 
-import asyncio
-import importlib.util
 import uuid
-from collections.abc import Awaitable, Callable, Iterator
-from pathlib import Path
+from collections.abc import Iterator
 from types import ModuleType
 from typing import Any
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import Connection, inspect, text
+from migration_support import (
+    expected_schema as declared_schema,
+)
+from migration_support import (
+    inspect_schema,
+    make_alembic_config,
+    query,
+    temporary_database,
+)
+from migration_support import (
+    load_migration as load_revision,
+)
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from alembic import command
-from app.core.config import settings
-from app.core.database import Base
 from app.users.constants import INITIAL_ROLES
 
-API_ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = API_ROOT / "alembic" / "versions" / "20261103_0001_authentication.py"
 AUTH_TABLES = {"users", "roles", "user_roles", "refresh_sessions", "audit_events"}
-
-
-def run[T](factory: Callable[[], Awaitable[T]]) -> T:
-    async def main() -> T:
-        return await factory()
-
-    return asyncio.run(main())
-
-
-async def _admin(statement: str) -> None:
-    engine = create_async_engine(settings.database_url, isolation_level="AUTOCOMMIT")
-    try:
-        async with engine.connect() as connection:
-            await connection.execute(text(statement))
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture(scope="module")
 def database_url() -> Iterator[str]:
-    name = f"estatehub_migration_test_{uuid.uuid4().hex[:12]}"
-    try:
-        run(lambda: _admin(f"CREATE DATABASE {name}"))
-    except OSError as exc:
-        pytest.skip(f"PostgreSQL is not reachable: {exc}")
-    try:
-        yield settings.database_url.rsplit("/", 1)[0] + f"/{name}"
-    finally:
-        run(lambda: _admin(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
+    with temporary_database("estatehub_migration_test") as url:
+        yield url
 
 
 @pytest.fixture
 def alembic_config(database_url: str) -> Config:
-    # No ini file: loading one would reconfigure logging for the whole test session.
-    config = Config()
-    config.set_main_option("script_location", str(API_ROOT / "alembic"))
-    config.set_main_option("sqlalchemy.url", database_url)
-    return config
-
-
-def query[T](database_url: str, work: Callable[[AsyncConnection], Awaitable[T]]) -> T:
-    async def main() -> T:
-        engine = create_async_engine(database_url)
-        try:
-            async with engine.begin() as connection:
-                return await work(connection)
-        finally:
-            await engine.dispose()
-
-    return asyncio.run(main())
-
-
-def inspect_schema(database_url: str) -> dict[str, dict[str, set[str]]]:
-    def collect(connection: Connection) -> dict[str, dict[str, set[str]]]:
-        inspector = inspect(connection)
-        schema: dict[str, dict[str, set[str]]] = {}
-        for table in inspector.get_table_names():
-            primary_key = inspector.get_pk_constraint(table)["name"]
-            schema[table] = {
-                "pk": {primary_key} if primary_key else set(),
-                "fk": {str(fk["name"]) for fk in inspector.get_foreign_keys(table)},
-                "uq": {str(uq["name"]) for uq in inspector.get_unique_constraints(table)},
-                "ck": {str(ck["name"]) for ck in inspector.get_check_constraints(table)},
-                # Unique constraints are backed by indexes; count those only as constraints.
-                "ix": {
-                    str(ix["name"])
-                    for ix in inspector.get_indexes(table)
-                    if "duplicates_constraint" not in ix
-                },
-            }
-        return schema
-
-    async def work(connection: AsyncConnection) -> dict[str, dict[str, set[str]]]:
-        return await connection.run_sync(collect)
-
-    return query(database_url, work)
+    return make_alembic_config(database_url)
 
 
 def expected_schema() -> dict[str, dict[str, set[str]]]:
-    """Constraint and index names declared on the ORM models."""
-    import app.models  # noqa: F401
-
-    schema: dict[str, dict[str, set[str]]] = {}
-    for name in AUTH_TABLES:
-        table = Base.metadata.tables[name]
-        by_kind: dict[str, set[str]] = {kind: set() for kind in ("pk", "fk", "uq", "ck", "ix")}
-        for constraint in table.constraints:
-            kind = {
-                "PrimaryKeyConstraint": "pk",
-                "ForeignKeyConstraint": "fk",
-                "UniqueConstraint": "uq",
-                "CheckConstraint": "ck",
-            }[type(constraint).__name__]
-            by_kind[kind].add(str(constraint.name))
-        by_kind["ix"] = {str(index.name) for index in table.indexes}
-        schema[name] = by_kind
-    return schema
+    return declared_schema(AUTH_TABLES)
 
 
 def role_rows(database_url: str) -> list[tuple[Any, ...]]:
@@ -132,11 +55,7 @@ def role_rows(database_url: str) -> list[tuple[Any, ...]]:
 
 
 def load_migration() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("auth_migration", MIGRATION)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_revision("20261103_0001_authentication.py")
 
 
 def test_seed_matches_application_roles() -> None:

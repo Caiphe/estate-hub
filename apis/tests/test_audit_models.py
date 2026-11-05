@@ -6,10 +6,15 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import event
 
+from app.audit.events import AuditEventCode
 from app.audit.metadata import (
+    EVENT_METADATA_SCHEMAS,
     MAX_METADATA_DEPTH,
+    MAX_METADATA_LIST_ITEMS,
+    MetadataKind,
     UnsafeAuditMetadataError,
     validate_audit_metadata,
+    validate_event_metadata,
 )
 from app.audit.models import AuditEvent, AuditEventImmutableError, _refuse_change
 from app.audit.schemas import AuditEventCreate, AuditEventPublic
@@ -137,3 +142,107 @@ def test_audit_public_reads_from_the_model() -> None:
     assert public["metadata"] == {"client_ip_prefix": "203.0.113.0/24"}
     assert public["event_code"] == "auth.login_succeeded"
     assert "details" not in public
+
+
+# --- Catalog event allow-lists ----------------------------------------------------------
+
+CATALOG_EVENT_PREFIXES = (
+    "property.",
+    "unit.",
+    "media.",
+    "document.",
+    "contact.",
+    "reference_data.",
+)
+SAMPLE_VALUES: dict[MetadataKind, Any] = {
+    MetadataKind.ID: str(uuid4()),
+    MetadataKind.ID_LIST: [str(uuid4()), str(uuid4())],
+    MetadataKind.COUNT: 3,
+    MetadataKind.FIELD_NAMES: ["name", "address_line_1"],
+    MetadataKind.CODE: "title_deed",
+    MetadataKind.MEDIA_TYPE: "image/webp",
+}
+
+
+def test_every_catalog_event_has_a_metadata_allow_list() -> None:
+    catalog = {code for code in AuditEventCode if code.value.startswith(CATALOG_EVENT_PREFIXES)}
+
+    assert catalog == set(EVENT_METADATA_SCHEMAS)
+    for code in (
+        "property.created",
+        "property.updated",
+        "property.archived",
+        "property.restored",
+        "property.owner_added",
+        "unit.created",
+        "media.uploaded",
+        "document.uploaded",
+    ):
+        assert AuditEventCode(code) in EVENT_METADATA_SCHEMAS
+
+
+def test_allow_listed_keys_pass_the_deny_list() -> None:
+    for schema in EVENT_METADATA_SCHEMAS.values():
+        for key in schema:
+            validate_audit_metadata({key: 1})
+
+
+@pytest.mark.parametrize("code", list(EVENT_METADATA_SCHEMAS), ids=str)
+def test_catalog_events_accept_their_allow_listed_metadata(code: AuditEventCode) -> None:
+    metadata = {key: SAMPLE_VALUES[kind] for key, kind in EVENT_METADATA_SCHEMAS[code].items()}
+
+    created = AuditEventCreate(
+        event_code=code, entity_type="property", entity_id=uuid4(), metadata=metadata
+    )
+
+    assert created.metadata == metadata
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "email",
+        "telephone",
+        "address",
+        "notes",
+        "internal_notes",
+        "filename",
+        "storage_key",
+        "title",
+    ],
+)
+def test_catalog_events_refuse_private_keys(key: str) -> None:
+    with pytest.raises(UnsafeAuditMetadataError, match="not allowed for property.updated"):
+        validate_event_metadata("property.updated", {key: "x"})
+
+
+@pytest.mark.parametrize(
+    ("code", "metadata"),
+    [
+        ("property.updated", {"changed_fields": ["owner@example.com"]}),
+        ("property.updated", {"changed_fields": "city"}),
+        ("property.updated", {"version": -1}),
+        ("property.updated", {"version": True}),
+        ("property.owner_added", {"contact_id": "Jane Owner"}),
+        ("media.reordered", {"media_ids": [str(uuid4())] * (MAX_METADATA_LIST_ITEMS + 1)}),
+        ("media.uploaded", {"media_type": "image/png; name=../../etc/passwd"}),
+        ("document.uploaded", {"category": "Lease for 12 Main St"}),
+    ],
+)
+def test_catalog_events_refuse_free_text_values(code: str, metadata: dict[str, Any]) -> None:
+    with pytest.raises(UnsafeAuditMetadataError, match="must be") as error:
+        validate_event_metadata(code, metadata)
+
+    for value in metadata.values():
+        if isinstance(value, str):
+            assert value not in str(error.value)
+
+
+def test_audit_create_applies_the_catalog_allow_list() -> None:
+    with pytest.raises(ValidationError):
+        AuditEventCreate(event_code="contact.created", metadata={"email": "owner@example.com"})
+
+
+def test_events_without_an_allow_list_use_the_deny_list_only() -> None:
+    validate_event_metadata("staff.roles_changed", {"added": ["agent"]})
+    validate_event_metadata("not.registered", {"anything": "goes"})

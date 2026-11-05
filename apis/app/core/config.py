@@ -1,5 +1,6 @@
 import re
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal, Self
 
 from pydantic import Field, IPvAnyNetwork, SecretStr, field_validator, model_validator
@@ -13,6 +14,7 @@ _PLACEHOLDER_SECRET_FRAGMENTS = ("change-me", "changeme", "dev-only", "dev_only"
 _COOKIE_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,64}$")
 _COOKIE_DOMAIN = re.compile(r"^\.?[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})*$")
 _DEPLOYED_ENVIRONMENTS = ("staging", "production")
+_MIB = 1024 * 1024
 
 
 class Settings(BaseSettings):
@@ -65,6 +67,15 @@ class Settings(BaseSettings):
     auth_session_max_requests_per_ip: int = Field(default=300, ge=1, le=100_000)
     auth_session_window_seconds: int = Field(default=60, ge=1, le=86_400)
     rate_limit_key_prefix: str = Field(default="estatehub:rl", min_length=1, max_length=64)
+
+    # Media and private documents. Files live outside PostgreSQL under this directory,
+    # which is the Docker `media_data` volume (/app/storage) in development. It is never
+    # served as static files: every download goes through an authorized API route.
+    media_storage_root: Path = Path("storage")
+    media_max_image_bytes: int = Field(default=10 * _MIB, ge=1024, le=100 * _MIB)
+    media_max_document_bytes: int = Field(default=25 * _MIB, ge=1024, le=500 * _MIB)
+    # Decoded pixel limit; larger images are refused before decoding (decompression bombs).
+    media_max_image_pixels: int = Field(default=50_000_000, ge=10_000, le=500_000_000)
 
     # Proxies whose X-Forwarded-For header is trusted, as IPs or CIDR networks. Empty
     # (the default) means the TCP peer address is always the client address.

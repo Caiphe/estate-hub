@@ -12,6 +12,7 @@ from app.core.database import engine
 from app.core.errors import register_exception_handlers
 from app.core.middleware import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.core.redis import redis_client
+from app.media.http import UploadLimitMiddleware
 
 
 @asynccontextmanager
@@ -28,6 +29,11 @@ def create_app() -> FastAPI:
         version="0.1.0",
         debug=settings.debug,
         lifespan=lifespan,
+    )
+    # Innermost first: the upload limit runs after a request ID has been assigned.
+    application.add_middleware(
+        UploadLimitMiddleware,
+        max_upload_bytes=max(settings.media_max_image_bytes, settings.media_max_document_bytes),
     )
     application.add_middleware(RequestIdMiddleware)
     application.add_middleware(

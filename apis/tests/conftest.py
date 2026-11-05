@@ -32,8 +32,14 @@ from app.main import app
 from app.users.models import User
 
 API_ROOT = Path(__file__).resolve().parents[1]
-# Seeded role rows are kept between tests; everything else is cleared.
-_TRUNCATE = "TRUNCATE audit_events, refresh_sessions, user_roles, users"
+# Seeded role rows are kept between tests; everything else is cleared. Seeded reference
+# data is cleared too, so no test depends on rows another test may have changed; tests
+# create the reference rows they need, and the migration tests check the seed.
+_TRUNCATE = (
+    "TRUNCATE documents, media_assets, unit_amenities, units, property_ownerships, contacts, "
+    "property_amenities, properties, amenities, property_subtypes, property_types, "
+    "audit_events, refresh_sessions, user_roles, users"
+)
 
 
 @pytest.fixture
@@ -67,9 +73,20 @@ def migrated_database_url() -> Iterator[str]:
         config.set_main_option("script_location", str(API_ROOT / "alembic"))
         config.set_main_option("sqlalchemy.url", url)
         command.upgrade(config, "head")
+        # Start from the same empty state that every test leaves behind.
+        asyncio.run(_clear(url))
         yield url
     finally:
         asyncio.run(_admin(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
+
+
+async def _clear(url: str) -> None:
+    engine = create_async_engine(url, poolclass=NullPool)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text(_TRUNCATE))
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture

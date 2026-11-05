@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
-from app.audit.metadata import validate_audit_metadata
+from app.audit.metadata import validate_audit_metadata, validate_event_metadata
 from app.audit.models import (
     ENTITY_TYPE_MAX_LENGTH,
     EVENT_CODE_MAX_LENGTH,
@@ -33,6 +33,11 @@ class AuditEventCreate(BaseModel):
     def _entity_reference_complete(self) -> Self:
         if (self.entity_type is None) != (self.entity_id is None):
             raise ValueError("entity_type and entity_id must be provided together.")
+        return self
+
+    @model_validator(mode="after")
+    def _metadata_allowed_for_event(self) -> Self:
+        validate_event_metadata(self.event_code, self.metadata)
         return self
 
 

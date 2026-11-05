@@ -61,7 +61,16 @@ EXPECTED: dict[str, set[str]] = {
     "manager": {
         "staff:read",
         "properties:read",
-        "properties:manage",
+        "properties:create",
+        "properties:update",
+        "properties:archive",
+        "properties:read_internal",
+        "property_units:manage",
+        "property_media:manage",
+        "property_documents:read",
+        "property_documents:manage",
+        "property_ownership:read",
+        "property_ownership:manage",
         "listings:read",
         "listings:manage",
         "listings:publish",
@@ -80,6 +89,8 @@ EXPECTED: dict[str, set[str]] = {
     },
     "agent": {
         "properties:read",
+        "properties:read_internal",
+        "property_ownership:read",
         "listings:read",
         "listings:manage",
         "contacts:read",
@@ -107,7 +118,17 @@ ALL_CODES = {
     "staff:revoke_sessions",
     "audit:read",
     "properties:read",
-    "properties:manage",
+    "properties:create",
+    "properties:update",
+    "properties:archive",
+    "properties:read_internal",
+    "property_units:manage",
+    "property_media:manage",
+    "property_documents:read",
+    "property_documents:manage",
+    "property_ownership:read",
+    "property_ownership:manage",
+    "reference_data:manage",
     "listings:read",
     "listings:manage",
     "listings:publish",
@@ -163,6 +184,35 @@ def test_only_administrators_administer_staff() -> None:
         overlap = STAFF_ADMINISTRATION & {p.value for p in ROLE_PERMISSIONS[role]}
         assert administers == (role == RoleCode.ADMINISTRATOR)
         assert bool(overlap) == (role == RoleCode.ADMINISTRATOR)
+
+
+def test_only_administrators_manage_reference_data() -> None:
+    for role in RoleCode:
+        granted = Permission.REFERENCE_DATA_MANAGE in ROLE_PERMISSIONS[role]
+        assert granted == (role == RoleCode.ADMINISTRATOR)
+
+
+def test_accountants_have_read_only_property_context() -> None:
+    catalog = {p for p in ROLE_PERMISSIONS[RoleCode.ACCOUNTANT] if p.value.startswith("propert")}
+
+    assert catalog == {Permission.PROPERTIES_READ}
+
+
+def test_agents_cannot_change_catalog_records() -> None:
+    agent = {p.value for p in ROLE_PERMISSIONS[RoleCode.AGENT]}
+    changes = {
+        "properties:create",
+        "properties:update",
+        "properties:archive",
+        "property_units:manage",
+        "property_media:manage",
+        "property_documents:read",
+        "property_documents:manage",
+        "property_ownership:manage",
+        "reference_data:manage",
+    }
+
+    assert not agent & changes
 
 
 def test_matrix_is_immutable() -> None:
