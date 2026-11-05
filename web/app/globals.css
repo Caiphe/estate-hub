@@ -169,6 +169,42 @@
   .hero-media-image {
     animation: hero-image-settle 1100ms var(--ease-standard) 40ms both;
   }
+
+  /* The reassurance strip behaves like the threshold of the property experience: one
+     green line opens the row, then each benefit is uncovered like a set of shutters.
+     `data-motion` is added only when IntersectionObserver is available, so these rules
+     never hide content when JavaScript is unavailable. */
+  .value-proposition-list::before {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    content: "";
+    background: linear-gradient(90deg, var(--color-brand-strong), var(--color-brand));
+    transform-origin: left;
+  }
+
+  .value-proposition-list[data-motion="pending"]::before {
+    transform: scaleX(0);
+  }
+
+  .value-proposition-list[data-motion="pending"] .value-proposition-icon,
+  .value-proposition-list[data-motion="pending"] .value-proposition-copy {
+    visibility: hidden;
+  }
+
+  .value-proposition-list[data-motion="entered"]::before {
+    animation: value-threshold-draw 640ms var(--ease-standard) both;
+  }
+
+  .value-proposition-list[data-motion="entered"] .value-proposition-icon {
+    animation: value-icon-unlock 560ms var(--ease-standard)
+      calc(110ms + var(--value-delay)) both;
+  }
+
+  .value-proposition-list[data-motion="entered"] .value-proposition-copy {
+    animation: value-copy-open 620ms var(--ease-standard)
+      calc(175ms + var(--value-delay)) both;
+  }
 }
 
 @keyframes hero-copy-enter {
@@ -193,5 +229,37 @@
 @keyframes hero-image-settle {
   from {
     transform: scale(1.025);
+  }
+}
+
+@keyframes value-threshold-draw {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes value-icon-unlock {
+  from {
+    visibility: visible;
+    clip-path: inset(0 100% 0 0 round var(--radius-sm));
+    transform: translateX(-0.5rem) rotate(-5deg);
+  }
+
+  to {
+    visibility: visible;
+    clip-path: inset(0 round var(--radius-sm));
+  }
+}
+
+@keyframes value-copy-open {
+  from {
+    visibility: visible;
+    clip-path: inset(0 100% 0 0);
+    transform: translateX(-0.375rem);
+  }
+
+  to {
+    visibility: visible;
+    clip-path: inset(0);
   }
 }

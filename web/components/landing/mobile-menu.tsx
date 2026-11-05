@@ -15,9 +15,16 @@ const MENU_ID = "site-menu";
  * browser handles opening, Escape, outside clicks, and returning focus, even without
  * JavaScript. Script only closes it after a link is followed within this page.
  */
-export function MobileMenu({ currentHref }: { currentHref?: string }) {
+export function MobileMenu({
+  currentHref,
+  signedIn = false,
+}: {
+  currentHref?: string;
+  signedIn?: boolean;
+}) {
   function closeOnLink(event: MouseEvent<HTMLDivElement>) {
-    if ((event.target as Element).closest("a")) event.currentTarget.hidePopover();
+    if ((event.target as Element).closest("a"))
+      event.currentTarget.hidePopover();
   }
 
   return (
@@ -40,9 +47,12 @@ export function MobileMenu({ currentHref }: { currentHref?: string }) {
       >
         <PrimaryNavigation layout="stack" currentHref={currentHref} />
         <div className="mt-4 grid gap-3 border-t border-line pt-4 sm:grid-cols-2">
-          <ActionLink href={HEADER_ACTIONS.logIn.href} variant="secondary">
-            {HEADER_ACTIONS.logIn.label}
-          </ActionLink>
+          {/* Signed-in visitors reach their account through the icon beside the menu. */}
+          {signedIn ? null : (
+            <ActionLink href={HEADER_ACTIONS.logIn.href} variant="secondary">
+              {HEADER_ACTIONS.logIn.label}
+            </ActionLink>
+          )}
           <ActionLink href={HEADER_ACTIONS.getStarted.href} variant="primary">
             {HEADER_ACTIONS.getStarted.label}
           </ActionLink>

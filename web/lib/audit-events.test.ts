@@ -43,7 +43,7 @@ describe("audit event labels", () => {
 
   const events = fileURLToPath(new URL("../../apis/app/audit/events.py", import.meta.url));
   it.skipIf(!existsSync(events))("matches the API's AuditEventCode enum exactly", () => {
-    const codes = [...readFileSync(events, "utf8").matchAll(/=\s*"([a-z]+\.[a-z_]+)"/g)].map((match) => match[1]);
+    const codes = [...readFileSync(events, "utf8").matchAll(/=\s*"([a-z_]+\.[a-z_]+)"/g)].map((match) => match[1]);
     expect([...AUDIT_EVENT_CODES].sort()).toEqual(codes.sort());
   });
 });

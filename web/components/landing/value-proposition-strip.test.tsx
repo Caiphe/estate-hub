@@ -32,6 +32,15 @@ describe("ValuePropositionStrip", () => {
     expect(html.match(/<svg\b[^>]*aria-hidden="true"/g)).toHaveLength(4);
   });
 
+  it("provides one coordinated reveal with a stable stagger order", () => {
+    expect(html).toMatch(/<ul[^>]*class="[^"]*value-proposition-list[^"]*"/);
+    expect(html.match(/class="[^"]*value-proposition-item[^"]*"/g)).toHaveLength(4);
+    expect(html).toContain("--value-delay:0ms");
+    expect(html).toContain("--value-delay:315ms");
+    expect(html.match(/class="value-proposition-icon"/g)).toHaveLength(4);
+    expect(html.match(/class="value-proposition-copy"/g)).toHaveLength(4);
+  });
+
   it("renders whatever typed items it is given", () => {
     const one = renderToStaticMarkup(
       <ValuePropositionStrip items={[{ id: "x", icon: "user", title: "Only one", description: "Line." }]} />,

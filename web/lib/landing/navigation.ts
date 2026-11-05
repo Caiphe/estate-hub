@@ -1,3 +1,5 @@
+import { WORKSPACE_HOME } from "@/lib/auth/config";
+
 import type { NavLink } from "./types";
 
 /**
@@ -16,6 +18,8 @@ export const PRIMARY_NAV: readonly NavLink[] = [
 export const HEADER_ACTIONS = {
   logIn: { label: "Log in", href: "/login" },
   getStarted: { label: "Get started", href: "/#how-it-works" },
+  // Replaces "Log in" for visitors who already have a session.
+  account: { label: "Your account", href: WORKSPACE_HOME },
 } as const satisfies Record<string, NavLink>;
 
 /** Section ids the navigation targets; sections must render these ids. */

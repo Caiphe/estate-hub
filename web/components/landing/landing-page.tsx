@@ -11,7 +11,13 @@ import { SiteHeader } from "./site-header";
  * The first section (the hero) paints the pale wash and reserves `--site-header-height`
  * at its top, so the header reads as part of the hero without leaving the header landmark.
  */
-export function LandingPage({ children }: { children?: ReactNode }) {
+export function LandingPage({
+  children,
+  signedIn = false,
+}: {
+  children?: ReactNode;
+  signedIn?: boolean;
+}) {
   return (
     <div className="site relative min-h-screen bg-surface font-sans text-base leading-normal text-fg">
       <a
@@ -20,9 +26,13 @@ export function LandingPage({ children }: { children?: ReactNode }) {
       >
         Skip to main content
       </a>
-      <SiteHeader />
+      <SiteHeader signedIn={signedIn} />
       {/* tabIndex lets the skip link move focus here, not just scroll. */}
-      <main id={LANDING_SECTION_IDS.main} tabIndex={-1} className="focus:outline-none">
+      <main
+        id={LANDING_SECTION_IDS.main}
+        tabIndex={-1}
+        className="focus:outline-none"
+      >
         {children}
       </main>
       <SiteFooter />

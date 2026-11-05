@@ -157,6 +157,23 @@ test.describe("section recomposition", () => {
     }
   });
 
+  test("value strip reveals on entry and stays still for reduced motion", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 400 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/");
+
+    const region = page.getByRole("region", { name: "Why EstateHub" });
+    const list = region.getByRole("list");
+    await expect(list).toHaveAttribute("data-motion", "pending");
+    await list.scrollIntoViewIfNeeded();
+    await expect(list).toHaveAttribute("data-motion", "entered");
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload();
+    await expect(list).not.toHaveAttribute("data-motion");
+    await expect(region.getByText("Verified properties")).toBeVisible();
+  });
+
   test("featured cards: three, two, then one per row", async ({ page }) => {
     const cards = page.getByRole("region", { name: "Discover our handpicked properties" }).getByRole("article");
     for (const [width, expectedRows] of [[1440, 1], [768, 2], [390, 3]] as const) {

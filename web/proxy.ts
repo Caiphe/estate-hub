@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { ACCESS_COOKIE_NAME, CSRF_COOKIE_NAME, LOGIN_PATH } from "./lib/auth/config";
+import { ACCESS_COOKIE_NAME, LOGIN_PATH } from "./lib/auth/config";
 import { loginPathFor, postLoginPath } from "./lib/auth/redirect";
+import { hasSessionCookie } from "./lib/auth/session-cookies";
 
 /**
  * Optimistic route protection. Only the API decides who is authenticated; this proxy
@@ -24,8 +25,10 @@ export function proxy(request: NextRequest) {
     return noStore(NextResponse.next());
   }
 
-  if (!hasAccess && !request.cookies.has(CSRF_COOKIE_NAME)) {
-    return NextResponse.redirect(new URL(loginPathFor(`${pathname}${search}`), request.url));
+  if (!hasSessionCookie(request.cookies)) {
+    return NextResponse.redirect(
+      new URL(loginPathFor(`${pathname}${search}`), request.url),
+    );
   }
   return noStore(NextResponse.next());
 }
@@ -38,5 +41,11 @@ function noStore(response: NextResponse): NextResponse {
 
 export const config = {
   // Must list every WORKSPACE_PREFIXES entry; Next.js requires a static literal here.
-  matcher: ["/login", "/dashboard/:path*", "/account/:path*", "/staff/:path*", "/audit/:path*"],
+  matcher: [
+    "/login",
+    "/dashboard/:path*",
+    "/account/:path*",
+    "/staff/:path*",
+    "/audit/:path*",
+  ],
 };
