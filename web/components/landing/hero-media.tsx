@@ -11,7 +11,7 @@ import { LANDING_ASSETS } from "@/lib/landing/assets";
 export function HeroMedia() {
   const { src, alt } = LANDING_ASSETS.hero;
   return (
-    <div className="relative mt-10 aspect-video lg:absolute lg:inset-y-0 lg:right-0 lg:left-5/12 lg:mt-0 lg:aspect-auto">
+    <div className="hero-media-arrival relative mt-10 aspect-video lg:absolute lg:inset-y-0 lg:right-0 lg:left-5/12 lg:mt-0 lg:aspect-auto">
       <Image
         src={src}
         alt={alt}
@@ -20,7 +20,7 @@ export function HeroMedia() {
         sizes="(min-width: 64rem) 60vw, 100vw"
         // Keeps the family in frame: right of centre at desktop (where only the sides are
         // cropped), and high enough on small screens that faces clear the top fade.
-        className="object-cover object-[62%_35%]"
+        className="hero-media-image object-cover object-[62%_35%]"
       />
       {/* Feathers the photograph into the wash: from above on small screens, from the left
           at desktop, so the seam never cuts behind the copy. */}

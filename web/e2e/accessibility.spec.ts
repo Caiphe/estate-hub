@@ -204,7 +204,7 @@ test.describe("user preferences", () => {
     await expect(page.getByRole("link", { name: "Skip to main content" })).toHaveCSS("outline-style", "solid");
   });
 
-  test("reduced motion: no transitions and no hover movement", async ({ page }) => {
+  test("reduced motion: no transitions, animations, or hover movement", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/");
@@ -213,6 +213,7 @@ test.describe("user preferences", () => {
       .locator(".site *")
       .evaluateAll((elements) => [...new Set(elements.map((element) => getComputedStyle(element).transitionDuration))]);
     expect(durations.every((duration) => duration.split(",").every((part) => parseFloat(part) === 0))).toBe(true);
+    expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 
     const card = page.getByRole("article").first();
     await card.hover();

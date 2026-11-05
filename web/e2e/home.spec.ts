@@ -50,6 +50,28 @@ test("the hero has one page heading and a described, preloaded photograph", asyn
   await expect(page.locator('head link[rel="preload"][as="image"]')).toHaveCount(1);
 });
 
+test("the hero uses one restrained, coordinated entrance sequence", async ({ page }) => {
+  const hero = page.getByRole("region", { name: /^Find, invest/ });
+  const motion = await hero
+    .locator(".hero-copy-arrival > *, .hero-search-arrival, .hero-media-arrival, .hero-media-image")
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const style = getComputedStyle(element);
+        return { name: style.animationName, iterations: style.animationIterationCount };
+      }),
+    );
+
+  expect(motion.map(({ name }) => name)).toEqual([
+    "hero-copy-enter",
+    "hero-copy-enter",
+    "hero-copy-enter",
+    "hero-search-enter",
+    "hero-media-reveal",
+    "hero-image-settle",
+  ]);
+  expect(motion.every(({ iterations }) => iterations === "1")).toBe(true);
+});
+
 test("hero copy stays readable and the layout holds with images blocked", async ({ page, browser }) => {
   const hero = (target: typeof page) => target.getByRole("region", { name: /^Find, invest/ });
   const heroBox = await hero(page).boundingBox();

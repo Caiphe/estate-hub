@@ -64,7 +64,10 @@ export function PropertySearch({ initialQuery }: { initialQuery: SearchQuery }) 
 
   return (
     // scroll-mt leaves breathing room above the panel when reached through "#search".
-    <div id={LANDING_SECTION_IDS.search} className="grid max-w-search scroll-mt-6 gap-4">
+    <div
+      id={LANDING_SECTION_IDS.search}
+      className="hero-search-arrival grid max-w-search scroll-mt-6 gap-4"
+    >
       <form
         role="search"
         aria-label="Property search"

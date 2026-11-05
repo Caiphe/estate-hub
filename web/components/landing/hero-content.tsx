@@ -1,7 +1,7 @@
 /** Badge, page-level heading, and supporting copy. Line breaks come from width, not `<br>`. */
 export function HeroContent() {
   return (
-    <div className="grid max-w-hero-copy justify-items-start gap-5">
+    <div className="hero-copy-arrival grid max-w-hero-copy justify-items-start gap-5">
       <p className="rounded-full bg-brand-subtle px-3 py-1 text-sm font-semibold text-brand-strong">
         Real estate, simplified
       </p>
